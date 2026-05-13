@@ -1,0 +1,15 @@
+src/
+├── components/
+│   ├── Canvas.tsx
+│   ├── ToolSidebar.tsx
+│   ├── TopBar.tsx
+│   └── IconLibrary.tsx
+├── lib/
+│   ├── types.ts
+│   ├── utils.ts
+│   └── renderer.ts
+├── assets/
+│   └── (keep your existing files)
+├── App.tsx
+├── index.css
+└── main.tsx
