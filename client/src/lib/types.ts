@@ -1,51 +1,68 @@
-export type Tool =
-  | "select"
-  | "hand"
-  | "pen"
-  | "rect"
-  | "circle"
-  | "diamond"
-  | "arrow"
+export type Tool = 
+  | "select" 
+  | "hand" 
+  | "pen" 
+  | "rect" 
+  | "circle" 
+  | "diamond" 
+  | "arrow" 
   | "line"
-  | "text"
+  | "text" 
   | "eraser"
-  | "soft-eraser"
-  | "icon";
+  | "icon"
+  | "eyedropper"
+  | "sticky"
+  | "highlighter";
 
 export interface Point {
   x: number;
   y: number;
 }
 
+export interface Guide {
+  id: string;
+  type: "horizontal" | "vertical";
+  position: number;
+}
+
+export interface Comment {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  author: string;
+  timestamp: number;
+  resolved: boolean;
+}
+
 export interface Element {
   id: string;
   tool: Tool;
-
   x: number;
   y: number;
   width: number;
   height: number;
-
-  points?: Point[];
-
+  points?: Point[]; 
   color: string;
   fillColor?: string;
   strokeWidth: number;
-
+  opacity?: number;
   text?: string;
-
+  icon?: string;
   iconName?: string;
   iconColor?: string;
-  iconPath?: string;
-
+  svgPaths?: string[];
+  viewBox?: string;
   isSelected?: boolean;
-  opacity?: number;
-
-  /**
-   * For curved arrows.
-   * 0 means straight arrow.
-   */
-  curveOffset?: number;
+  boundElementIds?: { start?: string | null; end?: string | null };
+  groupId?: string;
+  locked?: boolean;
+  lineStyle?: "solid" | "dashed" | "dotted";
+  arrowStyle?: "default" | "filled" | "none";
+  label?: { text: string; offsetX?: number; offsetY?: number };
+  imageData?: string; // base64 for imported images
+  rotation?: number;
+  lastModified?: number;
 }
 
 export interface AppState {
