@@ -34,13 +34,18 @@ export const setBgTheme = (t: string) => { bgTheme = t; };
 // =========================================================
 
 const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
-  const words = text.split(' '); const lines: string[] = []; let currentLine = words[0] || '';
+  if (!text) return [""];
+  const maxW = Math.max(20, maxWidth);
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = words[0] || '';
   for (let i = 1; i < words.length; i++) {
     const testLine = `${currentLine} ${words[i]}`;
-    if (ctx.measureText(testLine).width < maxWidth) currentLine = testLine;
+    if (ctx.measureText(testLine).width <= maxW) currentLine = testLine;
     else { lines.push(currentLine); currentLine = words[i]; }
   }
-  lines.push(currentLine); return lines;
+  lines.push(currentLine);
+  return lines;
 };
 
 const drawSvgElement = (ctx: CanvasRenderingContext2D, d: string) => {
@@ -164,16 +169,17 @@ const drawPen = (ctx: CanvasRenderingContext2D, el: Element) => {
 };
 
 const drawText = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, el: Element, zoom: number) => {
-  if (w === 0 && h === 0) return;
-  const fontSize = Math.max(16, h * 0.6);
+  const targetWidth = Math.max(w, 100);
+  const targetHeight = Math.max(h, 24);
+  const fontSize = Math.max(16, targetHeight * 0.6);
   ctx.font = `${fontSize}px Inter, sans-serif`;
   ctx.fillStyle = el.color;
   ctx.textBaseline = "middle"; ctx.textAlign = "left";
   const padding = 8;
-  const lines = wrapText(ctx, el.text || "", (w || 100) - padding * 2);
+  const lines = (el.text || "").split("\n").flatMap(line => wrapText(ctx, line, targetWidth - padding * 2));
   const lineHeight = fontSize * 1.2;
   const totalTextHeight = lines.length * lineHeight;
-  const startY = y + ((h||50) - totalTextHeight) / 2 + lineHeight / 2;
+  const startY = y + (targetHeight - totalTextHeight) / 2 + lineHeight / 2;
   lines.forEach((line, i) => { ctx.fillText(line, x + padding, startY + i * lineHeight); });
 };
 

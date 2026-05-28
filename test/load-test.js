@@ -9,7 +9,7 @@ const argv = Object.fromEntries(process.argv.slice(2).map(arg => {
 const CLIENTS = Number(argv.clients ?? 2000);
 const RATE = Number(argv.rate ?? 200);
 const DURATION = Number(argv.duration ?? 30);
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 
 const clients = [];
 let connected = 0;

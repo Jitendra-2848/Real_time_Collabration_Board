@@ -22,13 +22,11 @@ export const isPointInElement = (x: number, y: number, el: Element): boolean => 
       Math.hypot(p.x - x, p.y - y) < 10 / 1 // Adjust hit tolerance
     );
   }
-  
-  return (
-    x >= el.x &&
-    x <= el.x + el.width &&
-    y >= el.y &&
-    y <= el.y + el.height
-  );
+  const minX = Math.min(el.x, el.x + el.width);
+  const maxX = Math.max(el.x, el.x + el.width);
+  const minY = Math.min(el.y, el.y + el.height);
+  const maxY = Math.max(el.y, el.y + el.height);
+  return x >= minX && x <= maxX && y >= minY && y <= maxY;
 };
 
 // Get bounding box for selection
@@ -77,3 +75,15 @@ export const distanceToSegment = (
   const dy = py - yy;
   return Math.sqrt(dx * dx + dy * dy);
 };
+
+export const getElementBounds = (el: Element) => {
+    if (el.tool === "pen" && el.points && el.points.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      el.points.forEach(p => {
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+      });
+      return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }
+    return { x: el.width < 0 ? el.x + el.width : el.x, y: el.height < 0 ? el.y + el.height : el.y, width: Math.abs(el.width), height: Math.abs(el.height) };
+  };
