@@ -6,6 +6,7 @@ import { TopBar } from "./components/TopBar";
 import { IconLibrary } from "./components/IconLibrary";
 import { AuthPage } from "./components/AuthPage";
 import { RoomsPage } from "./components/RoomsPage";
+import { Minimap } from "./components/Minimap";
 import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
@@ -926,8 +927,12 @@ export const App = () => {
       
       {/* Room Info */}
       <div className="fixed top-8 right-4 z-[100] flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur-md text-sm">
-        <div className="font-semibold">Room: {currentRoom?.name}</div>
+        <div className="font-semibold">Room: {currentRoom?.name || 'None'}</div>
         <div className="text-slate-600">Logged in as {user?.username}</div>
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+          <span className="text-xs text-slate-600">{socketConnected ? `Connected (${peerCount} peer${peerCount !== 1 ? 's' : ''})` : 'Disconnected'}</span>
+        </div>
         <div className="flex gap-2">
           <button onClick={() => { setCurrentRoom(null); localStorage.removeItem("collab-room"); }}
             className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100">Leave room</button>
@@ -1103,28 +1108,10 @@ export const App = () => {
         <button onClick={() => ui.setShowMinimap(!ui.showMinimap)} className={`rounded px-2 py-1 text-xs ${ui.showMinimap ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100"}`}>Map</button>
       </div>
 
-      {/* Minimap */}
+      {/* Minimap (moved to component to avoid wasteful inline draws) */}
       {ui.showMinimap && (
         <div className="fixed bottom-16 right-4 z-30 w-48 h-36 bg-white border rounded-lg shadow-lg overflow-hidden">
-          <canvas width={192} height={144} className="w-full h-full opacity-70" ref={c => {
-            if (!c) return;
-            const ctx = c.getContext("2d");
-            if (!ctx) return;
-            ctx.fillStyle = "#fff";
-            ctx.fillRect(0, 0, 192, 144);
-            const scale = 0.05;
-            ctx.save();
-            ctx.scale(scale, scale);
-            ctx.translate((-pan.x / zoom) * 0.5, (-pan.y / zoom) * 0.5);
-            elements.forEach(el => {
-              if (["rect", "circle", "diamond"].includes(el.tool)) {
-                ctx.strokeStyle = el.color;
-                ctx.lineWidth = el.strokeWidth;
-                ctx.strokeRect(el.x, el.y, el.width || 10, el.height || 10);
-              }
-            });
-            ctx.restore();
-          }} />
+          <Minimap elements={elements} pan={pan} zoom={zoom} />
         </div>
       )}
 

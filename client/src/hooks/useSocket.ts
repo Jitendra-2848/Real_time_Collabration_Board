@@ -18,6 +18,7 @@ export const useSocket = (
 
   useEffect(() => {
     if (!roomId || !token) {
+      console.log('🔌 Skipping socket connection: roomId or token missing', { roomId, hasToken: !!token });
       setSocketConnected(false);
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -26,23 +27,48 @@ export const useSocket = (
       return;
     }
 
+    console.log('🔌 Attempting to connect to socket:', { SOCKET_URL, roomId, hasToken: !!token });
     const socket = io(SOCKET_URL, {
       auth: { roomId, token },
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     socketRef.current = socket;
 
-    socket.on("connect", () => setSocketConnected(true));
-    socket.on("disconnect", () => setSocketConnected(false));
+    socket.on("connect", () => {
+      console.log("✅ Socket connected:", socket.id);
+      setSocketConnected(true);
+    });
+    
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+      setSocketConnected(false);
+    });
+    
+    socket.on("error", (error: any) => {
+      console.error("❌ Socket error:", error);
+      setSocketConnected(false);
+    });
+    
+    socket.on("connect_error", (error: Error) => {
+      console.error("❌ Socket connect error:", error.message);
+      setSocketConnected(false);
+    });
+    
     socket.on("presence", ({ count }: { count: number }) =>
       setPeerCount(count),
     );
 
     socket.on("init-state", (serverElements: Element[]) => {
+      console.log("📦 Received initial state:", serverElements.length, 'elements');
       onElementsUpdate(serverElements);
     });
 
     socket.on('chat-history', (messages: any[]) => {
+      console.log('💬 Received chat history:', messages.length, 'messages');
       if (onMessagesUpdate) onMessagesUpdate(messages);
     });
 
@@ -74,14 +100,13 @@ export const useSocket = (
       onElementsUpdate(serverElements);
     });
 
-    socket.on("connect_error", (error: Error) => {
-      console.error("Socket connect error:", error.message);
-    });
-
     return () => {
-      // socket.disconnect();
+      console.log('🔌 Cleaning up socket connection');
+      try { socket.disconnect(); } catch (e) { /* ignore */ }
       socket.off("connect");
       socket.off("disconnect");
+      socket.off("error");
+      socket.off("connect_error");
       socket.off("presence");
       socket.off("init-state");
       socket.off("element-created");

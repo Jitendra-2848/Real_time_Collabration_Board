@@ -16,7 +16,8 @@ export async function register(req, res) {
 
   const passwordHash = await hashPassword(password);
   const user = await createUser(normalizedUsername, passwordHash);
-  const token = signToken({ userId: user.id, username: user.username });
+
+  const token = signToken({ id: user.id, username: user.username });
 
   return res.json({ user: { id: user.id, username: user.username }, token });
 }
@@ -38,6 +39,7 @@ export async function login(req, res) {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
-  const token = signToken({ userId: user.id, username: user.username });
+
+  const token = signToken({ id: user.id, username: user.username });
   return res.json({ user: { id: user.id, username: user.username }, token });
 }

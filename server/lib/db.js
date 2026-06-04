@@ -101,7 +101,7 @@ export async function listRooms() {
 
 export async function findRoomById(id) {
   const result = await pool.query(
-    `SELECT rooms.id, rooms.name, rooms.created_by, rooms.access_mode, rooms.created_at, users.username as created_by_username
+    `SELECT rooms.id, rooms.name, rooms.created_by, rooms.access_mode, rooms.created_at, users.username as created_by
      FROM rooms
      JOIN users ON rooms.created_by = users.id
      WHERE rooms.id = $1 LIMIT 1`,

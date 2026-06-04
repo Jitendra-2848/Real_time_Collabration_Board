@@ -4,13 +4,21 @@ const jsonHeaders = {
   'Content-Type': 'application/json',
 };
 
+async function handleResponse(response: Response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { error: data.error || `Request failed with status ${response.status}` };
+  }
+  return data;
+}
+
 export async function registerUser(username: string, password: string) {
   const response = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ username, password }),
   });
-  return await response.json();
+  return handleResponse(response);
 }
 
 export async function loginUser(username: string, password: string) {
@@ -19,7 +27,7 @@ export async function loginUser(username: string, password: string) {
     headers: jsonHeaders,
     body: JSON.stringify({ username, password }),
   });
-  return await response.json();
+  return handleResponse(response);
 }
 
 export async function fetchRooms(token: string) {
@@ -28,7 +36,7 @@ export async function fetchRooms(token: string) {
       Authorization: `Bearer ${token}`,
     },
   });
-  return await response.json();
+  return handleResponse(response);
 }
 
 export async function createRoom(token: string, name: string, access_mode?: string) {
@@ -42,7 +50,7 @@ export async function createRoom(token: string, name: string, access_mode?: stri
     },
     body: JSON.stringify(body),
   });
-  return await response.json();
+  return handleResponse(response);
 }
 
 export async function fetchRoomMessages(token: string, roomId: number) {
@@ -51,7 +59,7 @@ export async function fetchRoomMessages(token: string, roomId: number) {
       Authorization: `Bearer ${token}`,
     },
   });
-  return await response.json();
+  return handleResponse(response);
 }
 
 export async function fetchRoomById(token: string, roomId: number) {
@@ -60,5 +68,5 @@ export async function fetchRoomById(token: string, roomId: number) {
       Authorization: `Bearer ${token}`,
     },
   });
-  return await response.json();
+  return handleResponse(response);
 }

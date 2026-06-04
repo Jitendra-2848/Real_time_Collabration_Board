@@ -99,33 +99,39 @@ subClient.on('error', (err) => {
 });
 
 io.on('connection', async (socket) => {
+  console.log(`\n🔌 [Socket] New connection attempt: socketId=${socket.id}`);
   const { roomId, token } = socket.handshake.auth || {};
+  console.log(`[Socket] handshake.auth:`, { roomId, tokenPresent: !!token, roomIdType: typeof roomId });
 
-  if (DEBUG) console.log('handshake.auth:', socket.handshake.auth);
   if (!roomId || !token) {
-    socket.emit('error', 'Room ID and authentication token are required.');
+    console.error('❌ [Socket] Connection failed: Missing roomId or token', { roomId, token: token ? 'present' : 'missing' });
+    socket.disconnect(true);
     return;
   }
 
   let user;
   try {
     user = verifyToken(token);
+    console.log(`[Socket] Token verified. User:`, { id: user.id, username: user.username });
   } catch (error) {
-    socket.emit('error', 'Invalid authentication token.');
+    console.error('❌ [Socket] Connection failed: Invalid token:', error.message);
     socket.disconnect(true);
     return;
   }
 
-  const room = await findRoomById(Number(roomId));
+  console.log(`[Socket] Looking up room: roomId=${roomId}`);
+  const room = await findRoomById(roomId);
   if (!room) {
-    socket.emit('error', 'Room not found.');
+    console.error('❌ [Socket] Connection failed: Room not found in DB', { roomId });
     socket.disconnect(true);
     return;
   }
 
+  console.log(`[Socket] Room found:`, { id: room.id, name: room.name, created_by: room.created_by, access_mode: room.access_mode });
   const roomKey = String(room.id);
 
   // If owner connects, track owner sockets
+  console.log(`[Socket] Owner check: user.id=${user.id} === room.created_by=${room.created_by} → ${user.id === room.created_by}`);
   if (user.id === room.created_by) {
     if (!roomOwners.has(roomKey)) roomOwners.set(roomKey, new Set());
     roomOwners.get(roomKey).add(socket.id);
@@ -152,21 +158,25 @@ io.on('connection', async (socket) => {
   } else {
     // Default: join room immediately
     socket.join(roomKey);
-    if (DEBUG) console.log('A user connected:', socket.id, 'room:', roomKey, 'user:', user.username);
+    if (DEBUG) console.log('✅ User joined room:', socket.id, 'room:', roomKey, 'user:', user.username, 'userId:', user.id);
 
     const roomElements = (await getRoomState(room.id)) || [];
+    console.log('📦 Sending initial state to', user.username, 'elements count:', roomElements.length);
     socket.emit('init-state', roomElements);
 
     // send recent chat history
     try {
       const messages = await fetchMessages(room.id);
+      console.log('💬 Sending chat history:', messages.length, 'messages');
       socket.emit('chat-history', messages);
     } catch (err) {
       if (DEBUG) console.error('Failed to load chat history:', err.message || err);
     }
 
     const roomData = io.sockets.adapter.rooms.get(roomKey);
-    io.to(roomKey).emit('presence', { count: roomData ? roomData.size : 0 });
+    const memberCount = roomData ? roomData.size : 0;
+    console.log(`[Socket] 👥 Room "${roomKey}" presence updated: ${memberCount} member(s)`);
+    io.to(roomKey).emit('presence', { count: memberCount });
   }
 
   /**

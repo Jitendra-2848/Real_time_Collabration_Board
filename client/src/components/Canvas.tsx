@@ -61,7 +61,7 @@ export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
     }, [ref]);
 
     return (
-      <div className="absolute inset-0" style={{ touchAction: "none" }}>
+      <div className="absolute inset-0 z-0" style={{ touchAction: "none" }}>
         <canvas ref={bgLayerRef} className="absolute inset-0 block" style={{ touchAction: "none", pointerEvents: "none" }} />
         <canvas ref={connLayerRef} className="absolute inset-0 block" style={{ touchAction: "none", pointerEvents: "none" }} />
         <canvas ref={nodeLayerRef}
