@@ -6,7 +6,7 @@ import { TopBar } from "./components/TopBar";
 import { IconLibrary } from "./components/IconLibrary";
 import { AuthPage } from "./components/AuthPage";
 import { RoomsPage } from "./components/RoomsPage";
-import type { Element, Point, Guide, Comment } from "./lib/types";
+import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
 // Hooks
@@ -21,6 +21,7 @@ import * as AlignmentService from "./services/alignmentService";
 import * as SelectionService from "./services/selectionService";
 import * as BoardService from "./services/boardService";
 import * as StorageService from "./services/storageService";
+import * as ConnectorService from "./services/connectorService";
 
 // Constants
 import { RESIZE_HANDLE_SIZE, EDGE_THRESHOLD } from "./constants/tools";
@@ -28,102 +29,103 @@ import { TEMPLATES } from "./constants/templates";
 
 // Handlers
 import { handleKeyDown } from "./handlers/keyboardHandlers";
+import { getReshapeHandleAtPoint } from "./lib/renderer";
 import { handleTextBlur, createTextElement, createStickyNote } from "./handlers/textHandlers";
 import { isLongPress } from "./handlers/touchHandlers";
 
 export const App = () => {
-  // Core state management
+  // =========================================================
+  // STATE
+  // =========================================================
   const { elements, setElements, pushToHistory, undo, redo, canUndo, canRedo, history, historyIndex } = useHistory([]);
   const ui = useUI();
   const drawingStyle = useDrawingStyle();
-  
-  // View state
+
+  const [defaultTextStyle, setDefaultTextStyle] = useState<TextStyle>("rough");
+  const cycleTextStyle = () => {
+    const order: TextStyle[] = ["rough", "clean", "mono"];
+    const next = order[(order.indexOf(defaultTextStyle) + 1) % order.length];
+    setDefaultTextStyle(next);
+  };
+
+  // View
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [bgTheme] = useState<"white"|"light-grid"|"dark"|"dark-grid">("light-grid");
-  
+
   // Text editing
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
-  const [editingPosition, setEditingPosition] = useState<Point>({ x: 0, y: 0 });
-  
+
   // Clipboard, rubber-band, grouping
   const clipboardRef = useRef<Element[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [nextGroupId, setNextGroupId] = useState(1);
-  
-  // Guides, comments
+
+  // Guides, comments, connectors
   const [guides, setGuides] = useState<Guide[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
-  
-  // Multiple boards
-  const [boards, setBoards] = useState<BoardService.Board[]>([
-    { id: "board-1", name: "Board 1", elements: [] }
-  ]);
+  const [comments] = useState<Comment[]>([]);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [connectionPreview, setConnectionPreview] = useState<{
+    sourceId: string; sourceAnchor: string; targetId: string | null; mousePos: Point;
+  } | null>(null);
+
+  // Boards
+  const [boards, setBoards] = useState<BoardService.Board[]>([{ id: "board-1", name: "Board 1", elements: [] }]);
   const [activeBoardId, setActiveBoardId] = useState("board-1");
 
-  // Authentication and rooms
+  // Auth & Rooms
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: number; username: string } | null>(null);
   const [currentRoom, setCurrentRoom] = useState<{ id: number; name: string } | null>(null);
 
   // Socket
-  const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || "http://localhost:3000";
+  const defaultSocketUrl = typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://localhost:8000";
+  const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || defaultSocketUrl;
   const [messages, setMessages] = useState<any[]>([]);
-  const { socketRef, socketConnected, peerCount, sendBoardState, deleteElement, sendChat } = useSocket(
-    SOCKET_URL,
-    currentRoom?.id ?? null,
-    authToken,
-    (updatedElements) => {
-      setElements(updatedElements);
-    },
-    (msgs) => {
-      setMessages(msgs as any[]);
-    }
-    ,
+  const { socketRef, socketConnected, peerCount, sendBoardState, sendChat } = useSocket(
+    SOCKET_URL, currentRoom?.id ?? null, authToken,
+    (updatedElements) => setElements(updatedElements),
+    (msgs) => setMessages(msgs as any[]),
     (req) => {
-      // Simple owner prompt to accept/reject join
       const accept = window.confirm(`${req.user.username} requests to join. Accept?`);
-      try {
-        socketRef?.current?.emit('join-response', { socketId: req.socketId, accept });
-      } catch (err) {
-        console.error('Failed to send join-response', err);
-      }
+      socketRef?.current?.emit("join-response", { socketId: req.socketId, accept });
     }
   );
 
-  const ChatInput: React.FC<{ onSend: (text: string) => void }> = ({ onSend }) => {
-    const [text, setText] = useState('');
-    return (
-      <div className="flex gap-2">
-        <input value={text} onChange={e => setText(e.target.value)} className="flex-1 rounded-2xl border px-3 py-2" placeholder="Write a message" />
-        <button onClick={() => { if (text.trim()) { onSend(text); setText(''); } }} className="rounded-2xl bg-slate-900 text-white px-3 py-2">Send</button>
-      </div>
-    );
-  };
-
-  // Auto-save
-  const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  
   // Refs
   const currentId = useRef<string | null>(null);
   const offset = useRef<Point>({ x: 0, y: 0 });
+  const selectionOrigin = useRef<Point | null>(null);
   const resizeOrigin = useRef<{ x: number; y: number; el: Element } | null>(null);
   const connectionOrigin = useRef<{ elementId: string; point: Point } | null>(null);
+  const reshapeOrigin = useRef<{ handle: ReshapeHandle; startMouse: Point; startEl: Element } | null>(null);
   const touchStartRef = useRef<{ x: number; y: number; time: number; dist: number } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeBoardIdRef = useRef(activeBoardId);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const elementsRef = useRef<Element[]>(elements);
+  const connectorsRef = useRef<Connector[]>(connectors);
   
+  // FIX: Add lastMousePos ref for accurate delta tracking
+  const lastMousePos = useRef<Point>({ x: 0, y: 0 });
+  
+  // Keep refs in sync
   useEffect(() => { activeBoardIdRef.current = activeBoardId; }, [activeBoardId]);
-  
+  useEffect(() => { elementsRef.current = elements; }, [elements]);
+  useEffect(() => { connectorsRef.current = connectors; }, [connectors]);
+
   // Sync elements with active board
   useEffect(() => {
     setElements(boards.find(b => b.id === activeBoardId)?.elements || []);
   }, [activeBoardId]);
 
+  // Auth Init
   useEffect(() => {
-    const savedAuth = localStorage.getItem('collab-auth');
+    const savedAuth = localStorage.getItem("collab-auth");
     if (savedAuth) {
       try {
         const parsed = JSON.parse(savedAuth);
@@ -131,81 +133,68 @@ export const App = () => {
           setAuthToken(parsed.token);
           setUser(parsed.user);
         }
-      } catch {
-        localStorage.removeItem('collab-auth');
-      }
+      } catch { localStorage.removeItem("collab-auth"); }
     }
-
-    const savedRoom = localStorage.getItem('collab-room');
+    const savedRoom = localStorage.getItem("collab-room");
     if (savedRoom) {
-      try {
-        setCurrentRoom(JSON.parse(savedRoom));
-      } catch {
-        localStorage.removeItem('collab-room');
-      }
+      try { setCurrentRoom(JSON.parse(savedRoom)); } catch { localStorage.removeItem("collab-room"); }
     }
   }, []);
-  
+
   const syncBoard = useCallback((els: Element[]) => {
     setBoards(prev => prev.map(b => b.id === activeBoardIdRef.current ? { ...b, elements: els } : b));
   }, []);
-  
-  // Enhanced push to history with sync
+
   const pushToHistoryWithSync = useCallback((newElements: Element[]) => {
     syncBoard(newElements);
     pushToHistory(newElements);
     sendBoardState(newElements);
   }, [syncBoard, pushToHistory, sendBoardState]);
-  
+
   // Background theme
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    container.className = container.className.replace(/bg-\w+-\d*/g, '');
-    if (bgTheme.includes('dark')) container.classList.add('bg-gray-900');
-    else container.classList.add('bg-gray-50');
+    container.className = container.className.replace(/bg-\w+-\d*/g, "");
+    container.classList.add(bgTheme.includes("dark") ? "bg-gray-900" : "bg-gray-50");
   }, [bgTheme]);
-  
+
+  // =========================================================
+  // HANDLERS
+  // =========================================================
   const handleAuthSuccess = (user: { id: number; username: string }, token: string) => {
     setUser(user);
     setAuthToken(token);
-    localStorage.setItem('collab-auth', JSON.stringify({ user, token }));
+    localStorage.setItem("collab-auth", JSON.stringify({ user, token }));
   };
-
   const handleLogout = () => {
-    setUser(null);
-    setAuthToken(null);
-    setCurrentRoom(null);
-    localStorage.removeItem('collab-auth');
-    localStorage.removeItem('collab-room');
+    setUser(null); setAuthToken(null); setCurrentRoom(null);
+    localStorage.removeItem("collab-auth"); localStorage.removeItem("collab-room");
   };
-
   const handleJoinRoom = (roomId: number, roomName: string) => {
     setCurrentRoom({ id: roomId, name: roomName });
-    localStorage.setItem('collab-room', JSON.stringify({ id: roomId, name: roomName }));
+    localStorage.setItem("collab-room", JSON.stringify({ id: roomId, name: roomName }));
   };
 
   // Auto-save
   useEffect(() => {
-    autoSaveTimer.current = setInterval(() => {
-      StorageService.saveToLocalStorage(elements, boards, activeBoardId);
+    const timer = setInterval(() => {
+      StorageService.saveToLocalStorage(elementsRef.current, boards, activeBoardIdRef.current);
     }, 5000);
-    
     const saved = StorageService.loadFromLocalStorage();
     if (saved) {
       if (saved.boards) setBoards(saved.boards);
       if (saved.activeBoardId) setActiveBoardId(saved.activeBoardId);
       if (saved.elements) setElements(saved.elements);
     }
-    
-    return () => { if (autoSaveTimer.current) clearInterval(autoSaveTimer.current); };
+    return () => clearInterval(timer);
   }, []);
-  
-  // Helper functions
+
+  // Helpers
   const getSelectedElements = (): Element[] => elements.filter(el => el.isSelected);
   const getSelected = () => elements.find(el => el.isSelected);
-  
-  const getElementBounds = (el: Element) => {
+
+  const getElementBoundsLocal = (el: Element) => {
     if (el.tool === "pen" && el.points && el.points.length > 0) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       el.points.forEach(p => {
@@ -214,14 +203,44 @@ export const App = () => {
       });
       return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
-    return { x: el.width < 0 ? el.x + el.width : el.x, y: el.height < 0 ? el.y + el.height : el.y, width: Math.abs(el.width), height: Math.abs(el.height) };
+    return {
+      x: el.width < 0 ? el.x + el.width : el.x,
+      y: el.height < 0 ? el.y + el.height : el.y,
+      width: Math.abs(el.width),
+      height: Math.abs(el.height),
+    };
   };
-  
+
   const isPointNearEdge = (px: number, py: number, bounds: { x: number; y: number; width: number; height: number }) => {
     const { x, y, width, height } = bounds;
-    const inside = px >= x - EDGE_THRESHOLD && px <= x + width + EDGE_THRESHOLD && py >= y - EDGE_THRESHOLD && py <= y + height + EDGE_THRESHOLD;
-    const deepInside = px >= x + EDGE_THRESHOLD && px <= x + width - EDGE_THRESHOLD && py >= y + EDGE_THRESHOLD && py <= y + height - EDGE_THRESHOLD;
-    return inside && !deepInside;
+    return px >= x - EDGE_THRESHOLD && px <= x + width + EDGE_THRESHOLD &&
+           py >= y - EDGE_THRESHOLD && py <= y + height + EDGE_THRESHOLD &&
+           !(px >= x + EDGE_THRESHOLD && px <= x + width - EDGE_THRESHOLD &&
+             py >= y + EDGE_THRESHOLD && py <= y + height - EDGE_THRESHOLD);
+  };
+
+  const getEdgeAnchors = (el: Element): Array<{ x: number; y: number; side: string }> => {
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
+    return [
+      { x: cx, y: el.y, side: "top" },
+      { x: cx, y: el.y + el.height, side: "bottom" },
+      { x: el.x, y: cy, side: "left" },
+      { x: el.x + el.width, y: cy, side: "right" },
+    ];
+  };
+
+  const findBestAnchorPair = (source: Element, target: Element) => {
+    const sAnchors = getEdgeAnchors(source);
+    const tAnchors = getEdgeAnchors(target);
+    let best = { s: sAnchors[0], t: tAnchors[0], dist: Infinity };
+    for (const sa of sAnchors) {
+      for (const ta of tAnchors) {
+        const dist = Math.hypot(sa.x - ta.x, sa.y - ta.y);
+        if (dist < best.dist) best = { s: sa, t: ta, dist };
+      }
+    }
+    return { sourceAnchor: best.s, targetAnchor: best.t };
   };
 
   // Wheel zoom
@@ -231,10 +250,8 @@ export const App = () => {
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (ui.presentationMode) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const direction = e.deltaY > 0 ? -1 : 1, step = 0.05;
-      setZoom(prev => Math.min(Math.max(prev * (1 + direction * step), 0.1), 5));
+      const delta = e.deltaY > 0 ? -1 : 1;
+      setZoom(prev => Math.min(Math.max(prev * (1 + delta * 0.08), 0.1), 5));
     };
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
@@ -243,181 +260,190 @@ export const App = () => {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDownEvent = (e: KeyboardEvent) => {
+      if (editingElementId) return;
       const action = handleKeyDown(e, elements, historyIndex, ui.presentationMode);
-      
       if (!action) return;
-      
       switch (action.action) {
-        case "undo":
-          undo();
-          break;
-        case "redo":
-          redo();
-          break;
-        case "delete-selected":
+        case "undo": undo(); break;
+        case "redo": redo(); break;
+        case "delete-selected": {
+          const activeIds = new Set(elements.filter(el => !el.isSelected || el.locked).map(el => el.id));
+          setConnectors(prev => prev.filter(c => activeIds.has(c.sourceId) && activeIds.has(c.targetId)));
           pushToHistoryWithSync(elements.filter(el => !el.isSelected || el.locked));
           break;
+        }
         case "copy":
           clipboardRef.current = elements.filter(el => el.isSelected).map(el => ({ ...el, isSelected: false }));
           break;
-        case "cut":
+        case "cut": {
           clipboardRef.current = elements.filter(el => el.isSelected && !el.locked).map(el => ({ ...el, isSelected: false }));
+          const cutIds = new Set(elements.filter(el => el.isSelected && !el.locked).map(el => el.id));
+          setConnectors(prev => prev.filter(c => !cutIds.has(c.sourceId) && !cutIds.has(c.targetId)));
           pushToHistoryWithSync(elements.filter(el => !el.isSelected || el.locked));
           break;
-        case "paste":
-          pushToHistoryWithSync(SelectionService.pasteElements(elements, clipboardRef.current));
-          break;
-        case "duplicate":
-          pushToHistoryWithSync(SelectionService.duplicateSelected(elements));
-          break;
-        case "select-all":
-          setElements(elements.map(el => ({ ...el, isSelected: !el.locked })));
-          break;
-        case "group":
+        }
+        case "paste": pushToHistoryWithSync(SelectionService.pasteElements(elements, clipboardRef.current)); break;
+        case "duplicate": pushToHistoryWithSync(SelectionService.duplicateSelected(elements)); break;
+        case "select-all": setElements(elements.map(el => ({ ...el, isSelected: !el.locked }))); break;
+        case "group": {
           const { elements: grouped, nextGroupId: newGroupId } = SelectionService.groupSelected(elements, nextGroupId);
           setNextGroupId(newGroupId);
           pushToHistoryWithSync(grouped);
           break;
-        case "ungroup":
-          pushToHistoryWithSync(SelectionService.ungroupSelected(elements));
-          break;
-        case "reset-zoom":
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-          break;
-        case "bring-to-front":
-          pushToHistoryWithSync(AlignmentService.bringToFront(elements));
-          break;
-        case "send-to-back":
-          pushToHistoryWithSync(AlignmentService.sendToBack(elements));
-          break;
-        case "bring-forward":
-          pushToHistoryWithSync(AlignmentService.bringForward(elements));
-          break;
-        case "send-backward":
-          pushToHistoryWithSync(AlignmentService.sendBackward(elements));
-          break;
-        case "align-left":
-          pushToHistoryWithSync(AlignmentService.alignSelected(elements, "left"));
-          break;
-        case "align-right":
-          pushToHistoryWithSync(AlignmentService.alignSelected(elements, "right"));
-          break;
-        case "align-top":
-          pushToHistoryWithSync(AlignmentService.alignSelected(elements, "top"));
-          break;
-        case "align-bottom":
-          pushToHistoryWithSync(AlignmentService.alignSelected(elements, "bottom"));
-          break;
+        }
+        case "ungroup": pushToHistoryWithSync(SelectionService.ungroupSelected(elements)); break;
+        case "reset-zoom": setZoom(1); setPan({ x: 0, y: 0 }); break;
+        case "bring-to-front": pushToHistoryWithSync(AlignmentService.bringToFront(elements)); break;
+        case "send-to-back": pushToHistoryWithSync(AlignmentService.sendToBack(elements)); break;
+        case "bring-forward": pushToHistoryWithSync(AlignmentService.bringForward(elements)); break;
+        case "send-backward": pushToHistoryWithSync(AlignmentService.sendBackward(elements)); break;
+        case "align-left": pushToHistoryWithSync(AlignmentService.alignSelected(elements, "left")); break;
+        case "align-right": pushToHistoryWithSync(AlignmentService.alignSelected(elements, "right")); break;
+        case "align-top": pushToHistoryWithSync(AlignmentService.alignSelected(elements, "top")); break;
+        case "align-bottom": pushToHistoryWithSync(AlignmentService.alignSelected(elements, "bottom")); break;
         case "export-png":
-          if (canvasRef.current) ExportService.exportCanvasToPNG(canvasRef.current);
+          if (canvasRef.current) {
+            const parent = canvasRef.current.parentElement;
+            const allCanvases = parent?.querySelectorAll('canvas');
+            if (allCanvases && allCanvases.length > 0) {
+              const composite = document.createElement('canvas');
+              composite.width = allCanvases[0].width;
+              composite.height = allCanvases[0].height;
+              const cctx = composite.getContext('2d');
+              if (cctx) {
+                allCanvases.forEach(c => cctx.drawImage(c, 0, 0));
+                ExportService.exportCanvasToPNG(composite);
+              }
+            } else {
+              ExportService.exportCanvasToPNG(canvasRef.current);
+            }
+          }
           break;
-        case "select-tool":
-          ui.setSelectedTool(action.data);
-          break;
-        case "presentation-next":
-          ui.setPresentationIndex(i => Math.min(i + 1, elements.length));
-          break;
-        case "presentation-prev":
-          ui.setPresentationIndex(i => Math.max(i - 1, 0));
-          break;
-        case "exit-presentation":
-          ui.setPresentationMode(false);
-          document.exitFullscreen().catch(() => {});
-          break;
+        case "select-tool": ui.setSelectedTool(action.data); break;
+        case "presentation-next": ui.setPresentationIndex(i => Math.min(i + 1, elements.length)); break;
+        case "presentation-prev": ui.setPresentationIndex(i => Math.max(i - 1, 0)); break;
+        case "exit-presentation": ui.setPresentationMode(false); document.exitFullscreen().catch(() => {}); break;
       }
     };
-    
     window.addEventListener("keydown", handleKeyDownEvent);
     return () => window.removeEventListener("keydown", handleKeyDownEvent);
-  }, [elements, historyIndex, ui.presentationMode, nextGroupId]);
-  // Z-order operations
+  }, [elements, historyIndex, ui.presentationMode, nextGroupId, editingElementId]);
+
   const bringToFront = () => pushToHistoryWithSync(AlignmentService.bringToFront(elements));
   const sendToBack = () => pushToHistoryWithSync(AlignmentService.sendToBack(elements));
   const bringForward = () => pushToHistoryWithSync(AlignmentService.bringForward(elements));
   const sendBackward = () => pushToHistoryWithSync(AlignmentService.sendBackward(elements));
-
-  // Lock/unlock
   const toggleLock = () => pushToHistoryWithSync(SelectionService.toggleLock(elements));
-
-  // Alignment
   const alignSelected = (dir: any) => pushToHistoryWithSync(AlignmentService.alignSelected(elements, dir));
-
-  // Grouping
   const groupSelected = () => {
     const { elements: grouped, nextGroupId: newId } = SelectionService.groupSelected(elements, nextGroupId);
     setNextGroupId(newId);
     pushToHistoryWithSync(grouped);
   };
-
   const ungroupSelected = () => pushToHistoryWithSync(SelectionService.ungroupSelected(elements));
-
-  // Duplicating and pasting
   const duplicateSelected = () => pushToHistoryWithSync(SelectionService.duplicateSelected(elements));
-  
-  const pasteElements = () => {
-    pushToHistoryWithSync(SelectionService.pasteElements(elements, clipboardRef.current));
-  };
+  const pasteElements = () => pushToHistoryWithSync(SelectionService.pasteElements(elements, clipboardRef.current));
 
-  // Add guide
   const addGuide = (type: "horizontal" | "vertical", position: number) => {
     setGuides(prev => [...prev, { id: uuid(), type, position }]);
   };
 
-  // Zoom to fit
   const zoomToFit = () => {
     if (elements.length === 0) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     elements.forEach(el => {
-      const b = getElementBounds(el);
-      minX = Math.min(minX, b.x);
-      minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.width);
-      maxY = Math.max(maxY, b.y + b.height);
+      const b = getElementBoundsLocal(el);
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
     });
     const padding = 50;
-    const fitZoom = Math.min(
-      (window.innerWidth - padding * 2) / (maxX - minX),
-      (window.innerHeight - padding * 2) / (maxY - minY),
-      2
-    );
+    const fitZoom = Math.min((window.innerWidth - padding * 2) / (maxX - minX), (window.innerHeight - padding * 2) / (maxY - minY), 2);
     setZoom(fitZoom);
     setPan({ x: -minX * fitZoom + padding, y: -minY * fitZoom + padding });
   };
 
-  // Import image
   const handleImportImage = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const id = uuid();
-      pushToHistoryWithSync([
-        ...elements,
-        {
-          id,
-          tool: "rect" as any,
-          x: 100,
-          y: 100,
-          width: 200,
-          height: 150,
-          color: "#000",
-          strokeWidth: 0,
-          imageData: reader.result as string
-        }
-      ]);
+      pushToHistoryWithSync([...elements, {
+        id: uuid(), tool: "rect" as any, x: 100, y: 100, width: 200, height: 150,
+        color: "#000", strokeWidth: 0, imageData: reader.result as string, resizable: true,
+      }]);
     };
     reader.readAsDataURL(file);
   };
 
-  // Load template
   const loadTemplate = (name: string) => {
     const tmpl = TEMPLATES[name];
-    if (tmpl) {
-      pushToHistoryWithSync(tmpl.map(el => ({ ...el, id: uuid(), isSelected: false })));
-    }
+    if (tmpl) pushToHistoryWithSync(tmpl.map(el => ({ ...el, id: uuid(), isSelected: false, resizable: true })));
     ui.setTemplatesOpen(false);
   };
 
-  // Text editing
+  const updateElements = useCallback((id: string, updates: Partial<Element>) => {
+    pushToHistoryWithSync(elements.map(el => (el.id === id ? { ...el, ...updates } : el)));
+  }, [elements, pushToHistoryWithSync]);
+
+  const handleAutoAttachConnector = useCallback((sourceEl: Element, targetEl: Element) => {
+    if (sourceEl.id === targetEl.id) return;
+    const { sourceAnchor, targetAnchor } = findBestAnchorPair(sourceEl, targetEl);
+    const newConnector = ConnectorService.createAutoConnector(sourceEl, targetEl, [], {
+      arrowStyle: drawingStyle.arrowStyle || "default",
+      lineStyle: drawingStyle.lineStyle || "solid",
+      color: drawingStyle.strokeColor || "#000",
+      strokeWidth: drawingStyle.strokeWidth || 2,
+    });
+    newConnector.sourceAnchor = `${sourceEl.id}-${sourceAnchor.side}`;
+    newConnector.targetAnchor = `${targetEl.id}-${targetAnchor.side}`;
+    
+    setConnectors(prev => [...prev, newConnector]);
+    const updatedElements = elements.map(el => {
+      if (el.id === sourceEl.id || el.id === targetEl.id) {
+        const connectedIds = [...(el.connectedElementIds || [])];
+        const otherId = el.id === sourceEl.id ? targetEl.id : sourceEl.id;
+        if (!connectedIds.includes(otherId)) connectedIds.push(otherId);
+        return { ...el, connectedElementIds: connectedIds };
+      }
+      return el;
+    });
+    pushToHistoryWithSync(updatedElements);
+  }, [elements, drawingStyle, pushToHistoryWithSync]);
+
+  const handleReshape = useCallback((el: Element, handle: ReshapeHandle, mouseDelta: Point): Element => {
+    const updated = { ...el };
+    switch (handle) {
+      case "start-point":
+        if (el.tool === "line" || el.tool === "arrow") {
+          updated.x += mouseDelta.x; updated.y += mouseDelta.y;
+          updated.width -= mouseDelta.x; updated.height -= mouseDelta.y;
+        } else if (el.points && el.points.length > 0) {
+          const points = [...el.points];
+          points[0] = { x: points[0].x + mouseDelta.x, y: points[0].y + mouseDelta.y };
+          updated.points = points;
+        }
+        break;
+      case "end-point":
+        if (el.tool === "line" || el.tool === "arrow") {
+          updated.width += mouseDelta.x; updated.height += mouseDelta.y;
+        } else if (el.points && el.points.length > 0) {
+          const points = [...el.points];
+          points[points.length - 1] = { x: points[points.length - 1].x + mouseDelta.x, y: points[points.length - 1].y + mouseDelta.y };
+          updated.points = points;
+        }
+        break;
+      case "top-left": updated.x += mouseDelta.x; updated.y += mouseDelta.y; updated.width -= mouseDelta.x; updated.height -= mouseDelta.y; break;
+      case "top-center": updated.y += mouseDelta.y; updated.height -= mouseDelta.y; break;
+      case "top-right": updated.y += mouseDelta.y; updated.width += mouseDelta.x; updated.height -= mouseDelta.y; break;
+      case "middle-left": updated.x += mouseDelta.x; updated.width -= mouseDelta.x; break;
+      case "middle-right": updated.width += mouseDelta.x; break;
+      case "bottom-left": updated.x += mouseDelta.x; updated.width -= mouseDelta.x; updated.height += mouseDelta.y; break;
+      case "bottom-center": updated.height += mouseDelta.y; break;
+      case "bottom-right": updated.width += mouseDelta.x; updated.height += mouseDelta.y; break;
+    }
+    if (Math.abs(updated.width) < 10) updated.width = el.width > 0 ? 10 : -10;
+    if (Math.abs(updated.height) < 10) updated.height = el.height > 0 ? 10 : -10;
+    return { ...updated, lastModified: Date.now() };
+  }, []);
+
   const handleTextBlurEvent = () => {
     if (!editingElementId) return;
     const nextElements = handleTextBlur(editingElementId, editingText, elements);
@@ -426,41 +452,59 @@ export const App = () => {
     setEditingText("");
   };
 
-  // Export functions
   const exportCanvas = () => {
     if (canvasRef.current) {
+      const parent = canvasRef.current.parentElement;
+      const allCanvases = parent?.querySelectorAll('canvas');
+      if (allCanvases && allCanvases.length > 1) {
+        const composite = document.createElement('canvas');
+        composite.width = allCanvases[0].width;
+        composite.height = allCanvases[0].height;
+        const cctx = composite.getContext('2d');
+        if (cctx) {
+          allCanvases.forEach(c => cctx.drawImage(c, 0, 0));
+          ExportService.exportCanvasToPNG(composite);
+          return;
+        }
+      }
       ExportService.exportCanvasToPNG(canvasRef.current);
     }
   };
-
   const exportSVG = () => ExportService.exportCanvasToSVG(elements);
-  const exportPDF = () => {
-    if (canvasRef.current) {
-      ExportService.exportCanvasToPDF(canvasRef.current);
-    }
-  };
+  const exportPDF = () => { if (canvasRef.current) ExportService.exportCanvasToPDF(canvasRef.current); };
+
+  // =========================================================
+  // CANVAS MOUSE HANDLERS - FIXED
+  // =========================================================
 
   const handleMouseDown = (e: React.MouseEvent) => {
     ui.setContextMenu(null);
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (editingElementId && ui.selectedTool !== "text") setEditingElementId(null);
     
+    // FIX: Store screen-space mouse position for accurate delta calculation
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+    
+    if (editingElementId && ui.selectedTool !== "text") {
+      handleTextBlurEvent();
+    }
+
     const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
     const clickedElement = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
-    
-    if (e.detail === 2 && clickedElement) {
-      const shift = e.shiftKey;
-      ui.setSelectedTool("select");
-      setElements(elements.map(el =>
-        el.id === clickedElement.id
-          ? { ...el, isSelected: shift ? !el.isSelected : true }
-          : shift ? el : { ...el, isSelected: false }
-      ));
-      ui.setAction("none");
-      return;
+
+    // Double click
+    if (e.detail === 2) {
+      if (ui.selectedTool === "select" && clickedElement) {
+        const otherSelected = elements.filter(el => el.isSelected && el.id !== clickedElement.id);
+        if (otherSelected.length > 0) {
+          handleAutoAttachConnector(clickedElement, otherSelected[0]);
+        }
+        setEditingElementId(clickedElement.id);
+        setEditingText(clickedElement.text || "");
+        return;
+      }
     }
-    
+
     if (ui.selectedTool === "hand") { ui.setAction("panning"); return; }
     if (ui.selectedTool === "eraser") { ui.setAction("erasing"); return; }
     if (ui.selectedTool === "eyedropper") {
@@ -474,10 +518,12 @@ export const App = () => {
     if (ui.selectedTool === "text") {
       const id = uuid();
       currentId.current = id;
-      setElements([...elements, createTextElement(point, drawingStyle.strokeColor, drawingStyle.opacity)]);
+      const newEl = createTextElement(point, drawingStyle.strokeColor, drawingStyle.opacity);
+      newEl.textStyle = defaultTextStyle;
+      newEl.resizable = true;
+      setElements([...elements, newEl]);
       setEditingElementId(id);
       setEditingText("");
-      setEditingPosition(point);
       return;
     }
     if (ui.selectedTool === "sticky") {
@@ -486,37 +532,61 @@ export const App = () => {
     }
     if (ui.selectedTool === "icon") { ui.setLibraryOpen(true); return; }
 
+    if (ui.selectedTool === "arrow") {
+      const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      if (clicked) {
+        const newId = uuid();
+        connectionOrigin.current = { elementId: clicked.id, point };
+        currentId.current = newId;
+        setElements([...elements, {
+          id: newId, tool: "arrow" as any, x: point.x, y: point.y, width: 0, height: 0,
+          color: drawingStyle.strokeColor, strokeWidth: drawingStyle.strokeWidth,
+          opacity: drawingStyle.opacity / 100,
+          boundElementIds: { start: clicked.id, end: null },
+          arrowStyle: drawingStyle.arrowStyle, resizable: true,
+        }]);
+        ui.setAction("connecting");
+        return;
+      }
+    }
+
     if (ui.selectedTool === "select") {
-      const selectedEl = elements.find(el => el.isSelected && !el.locked);
-      if (selectedEl) {
-        const bounds = getElementBounds(selectedEl);
+      const selectedEls = elements.filter(el => el.isSelected && !el.locked);
+      
+      for (const selectedEl of selectedEls) {
+        const reshapeHandle = getReshapeHandleAtPoint(point.x, point.y, selectedEl, zoom);
+        if (reshapeHandle) {
+          ui.setAction("resizing");
+          currentId.current = selectedEl.id;
+          reshapeOrigin.current = { handle: reshapeHandle, startMouse: point, startEl: selectedEl };
+          return;
+        }
+      }
+
+      for (const selectedEl of selectedEls) {
+        const bounds = getElementBoundsLocal(selectedEl);
         if (isPointNearEdge(point.x, point.y, bounds)) {
           const newId = uuid();
           connectionOrigin.current = { elementId: selectedEl.id, point };
           currentId.current = newId;
-          setElements([
-            ...elements,
-            {
-              id: newId,
-              tool: "line" as any,
-              x: point.x,
-              y: point.y,
-              width: 0,
-              height: 0,
-              color: drawingStyle.strokeColor,
-              strokeWidth: drawingStyle.strokeWidth,
-              opacity: drawingStyle.opacity / 100,
-              boundElementIds: { start: selectedEl.id, end: null }
-            }
-          ]);
+          setElements([...elements, {
+            id: newId, tool: "line" as any, x: point.x, y: point.y, width: 0, height: 0,
+            color: drawingStyle.strokeColor, strokeWidth: drawingStyle.strokeWidth,
+            opacity: drawingStyle.opacity / 100,
+            boundElementIds: { start: selectedEl.id, end: null }, resizable: true,
+          }]);
           ui.setAction("connecting");
           return;
         }
+      }
+
+      for (const selectedEl of selectedEls) {
+        const bounds = getElementBoundsLocal(selectedEl);
         const corners = [
           { x: bounds.x, y: bounds.y },
           { x: bounds.x + bounds.width, y: bounds.y },
           { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
-          { x: bounds.x, y: bounds.y + bounds.height }
+          { x: bounds.x, y: bounds.y + bounds.height },
         ];
         for (const c of corners) {
           if (Math.hypot(point.x - c.x, point.y - c.y) < RESIZE_HANDLE_SIZE / zoom) {
@@ -527,55 +597,47 @@ export const App = () => {
           }
         }
       }
+
       const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
       if (clicked) {
         const shift = e.shiftKey;
-        setElements(elements.map(el =>
+        const nextElements = elements.map(el =>
           el.id === clicked.id
             ? { ...el, isSelected: shift ? !el.isSelected : true }
             : shift ? el : { ...el, isSelected: false }
-        ));
+        );
+        setElements(nextElements);
         currentId.current = clicked.id;
         offset.current = { x: point.x - clicked.x, y: point.y - clicked.y };
+        // FIX: Store the element's original position for absolute movement calculation
+        selectionOrigin.current = { x: clicked.x, y: clicked.y };
         ui.setAction("moving");
-      } else {
-        if (!e.shiftKey) setElements(elements.map(el => ({ ...el, isSelected: false })));
+        return;
+      }
+
+      if (!e.shiftKey) setElements(elements.map(el => ({ ...el, isSelected: false })));
+      if (e.shiftKey) {
         setRubberBand({ x1: point.x, y1: point.y, x2: point.x, y2: point.y });
+      } else {
+        ui.setAction("panning");
       }
       return;
     }
 
-    // Drawing
     const id = uuid();
     currentId.current = id;
     const isPenLike = ["pen", "highlighter"].includes(ui.selectedTool);
     const el: Element = {
-      id,
-      tool: ui.selectedTool as any,
-      x: point.x,
-      y: point.y,
-      width: 0,
-      height: 0,
-      color: ui.selectedTool === "highlighter" ? "#FFEB3B" : drawingStyle.strokeColor,
-      fillColor:
-        ["pen", "line", "arrow", "highlighter"].includes(ui.selectedTool)
-          ? undefined
-          : drawingStyle.fillColor,
-      strokeWidth:
-        ui.selectedTool === "highlighter" ? 20 : drawingStyle.strokeWidth,
-      opacity:
-        ui.selectedTool === "highlighter"
-          ? 0.3
-          : drawingStyle.opacity / 100,
+      id, tool: ui.selectedTool as any,
+      x: point.x, y: point.y, width: 0, height: 0,
+      color: drawingStyle.strokeColor,
+      fillColor: ["pen", "line", "arrow", "highlighter"].includes(ui.selectedTool) ? undefined : drawingStyle.fillColor,
+      strokeWidth: ui.selectedTool === "highlighter" ? 25 : drawingStyle.strokeWidth,
+      opacity: drawingStyle.opacity / 100,
       points: isPenLike ? [point] : undefined,
-      lineStyle:
-        ui.selectedTool === "highlighter"
-          ? undefined
-          : drawingStyle.lineStyle,
-      arrowStyle:
-        ui.selectedTool === "arrow"
-          ? drawingStyle.arrowStyle
-          : undefined
+      lineStyle: drawingStyle.lineStyle,
+      arrowStyle: ui.selectedTool === "arrow" ? drawingStyle.arrowStyle : undefined,
+      resizable: true,
     };
     setElements([...elements, el]);
     ui.setAction("drawing");
@@ -584,116 +646,100 @@ export const App = () => {
   const handleMouseMove = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    
     const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
     
+    // FIX: Calculate screen-space delta, then convert to canvas-space
+    const screenDeltaX = e.clientX - lastMousePos.current.x;
+    const screenDeltaY = e.clientY - lastMousePos.current.y;
+    const canvasDeltaX = screenDeltaX / zoom;
+    const canvasDeltaY = screenDeltaY / zoom;
+    
+    // Update last mouse position
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+
     if (ui.action === "panning") {
-      setPan(prev => ({ x: prev.x + e.movementX, y: prev.y + e.movementY }));
+      // FIX: Panning uses screen delta (not divided by zoom) for 1:1 movement
+      setPan((prev) => ({ x: prev.x + screenDeltaX, y: prev.y + screenDeltaY }));
     } else if (ui.action === "drawing") {
-      setElements(prev =>
-        prev.map(el => {
-          if (el.id !== currentId.current) return el;
-          if (el.tool === "pen")
-            return { ...el, points: [...(el.points || []), point] };
-          return { ...el, width: point.x - el.x, height: point.y - el.y };
-        })
-      );
+      setElements((prev) => prev.map((el) => { 
+        if (el.id !== currentId.current) return el; 
+        if (el.tool === "pen" || el.tool === "highlighter") return { ...el, points: [...(el.points || []), point] }; 
+        return { ...el, width: point.x - el.x, height: point.y - el.y }; 
+      }));
     } else if (ui.action === "moving") {
-      setElements(prev =>
-        prev.map(el => {
+      // FIX: Use canvas delta for smooth, zoom-independent movement
+      setElements((prev) =>
+        prev.map((el) => {
           if (!el.isSelected || el.locked) return el;
-          if (el.id === currentId.current)
-            return {
-              ...el,
-              x: point.x - offset.current.x,
-              y: point.y - offset.current.y
-            };
-          const ddx =
-            point.x -
-            offset.current.x -
-            (prev.find(p => p.id === currentId.current)?.x ?? 0);
-          const ddy =
-            point.y -
-            offset.current.y -
-            (prev.find(p => p.id === currentId.current)?.y ?? 0);
-          return { ...el, x: el.x + ddx, y: el.y + ddy };
-        })
-      );
-    } else if (ui.action === "erasing") {
-      setElements(prev =>
-        prev.filter(el => {
-          if (el.tool === "pen" && el.points) {
-            for (let i = 0; i < el.points.length - 1; i++)
-              if (
-                distanceToSegment(
-                  point.x,
-                  point.y,
-                  el.points[i].x,
-                  el.points[i].y,
-                  el.points[i + 1].x,
-                  el.points[i + 1].y
-                ) < drawingStyle.eraserSize
-              )
-                return false;
-            return true;
-          }
-          return !isPointInElement(point.x, point.y, el);
-        })
-      );
-    } else if (ui.action === "resizing" && currentId.current && resizeOrigin.current) {
-      setElements(prev =>
-        prev.map(el => {
-          if (el.id !== currentId.current) return el;
-          let w =
-            resizeOrigin.current!.el.width +
-            (point.x - resizeOrigin.current!.x);
-          let h =
-            resizeOrigin.current!.el.height +
-            (point.y - resizeOrigin.current!.y);
-          return { ...el, width: w, height: h };
-        })
-      );
-    } else if (
-      ui.action === "connecting" &&
-      currentId.current
-    ) {
-      const hovered = [...elements].reverse().find(
-        el =>
-          el.id !== currentId.current &&
-          el.id !== connectionOrigin.current?.elementId &&
-          isPointInElement(point.x, point.y, el)
-      );
-      setElements(prev =>
-        prev.map(el => {
-          if (el.id !== currentId.current) return el;
-          const bounds = hovered ? getElementBounds(hovered) : null;
-          const tp = bounds
-            ? {
-                x: bounds.x + bounds.width / 2,
-                y: bounds.y + bounds.height / 2
-              }
-            : point;
-          return {
-            ...el,
-            width: tp.x - el.x,
-            height: tp.y - el.y,
-            boundElementIds: {
-              ...el.boundElementIds,
-              end: hovered ? hovered.id : null
-            }
+          return { 
+            ...el, 
+            x: el.x + canvasDeltaX, 
+            y: el.y + canvasDeltaY, 
+            lastModified: Date.now() 
           };
         })
       );
-    }
-    if (rubberBand)
-      setRubberBand(prev =>
-        prev
-          ? {
-              ...prev,
-              x2: point.x,
-              y2: point.y
+    } else if (ui.action === "erasing") {
+      setElements((prev) => prev.filter((el) => {
+        if (el.tool === "pen" && el.points) { 
+          for (let i = 0; i < el.points.length - 1; i++) {
+            if (distanceToSegment(point.x, point.y, el.points[i].x, el.points[i].y, el.points[i + 1].x, el.points[i + 1].y) < drawingStyle.eraserSize) {
+              return false;
             }
-          : null
+          }
+          return true;
+        }
+        return !isPointInElement(point.x, point.y, el);
+      }));
+    } else if (ui.action === "resizing" && currentId.current) {
+      if (reshapeOrigin.current) {
+        // FIX: Calculate cumulative delta from original position
+        const delta = { 
+          x: point.x - reshapeOrigin.current.startMouse.x, 
+          y: point.y - reshapeOrigin.current.startMouse.y 
+        };
+        setElements((prev) => 
+          prev.map((el) => 
+            (el.id !== currentId.current) ? el : handleReshape(reshapeOrigin.current!.startEl, reshapeOrigin.current!.handle, delta)
+          )
+        );
+      } else if (resizeOrigin.current) {
+        setElements((prev) => prev.map((el) => { 
+          if (el.id !== currentId.current) return el; 
+          return { ...el, width: point.x - resizeOrigin.current!.el.x, height: point.y - resizeOrigin.current!.el.y }; 
+        }));
+      }
+    } else if (ui.action === "connecting" && currentId.current) {
+      const hovered = [...elements].reverse().find((el) => 
+        el.id !== currentId.current && 
+        el.id !== connectionOrigin.current?.elementId && 
+        isPointInElement(point.x, point.y, el)
       );
+      if (connectionOrigin.current) { 
+        setConnectionPreview({ 
+          sourceId: connectionOrigin.current.elementId, 
+          sourceAnchor: "center", 
+          targetId: hovered?.id || null, 
+          mousePos: point 
+        }); 
+      }
+      setElements((prev) => prev.map((el) => { 
+        if (el.id !== currentId.current) return el; 
+        const bounds = hovered ? getElementBoundsLocal(hovered) : null; 
+        const tp = bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 } : point; 
+        return { 
+          ...el, 
+          width: tp.x - el.x, 
+          height: tp.y - el.y, 
+          boundElementIds: { ...el.boundElementIds, end: hovered ? hovered.id : null } 
+        }; 
+      }));
+    }
+    
+    if (rubberBand) {
+      setRubberBand((prev) => prev ? { ...prev, x2: point.x, y2: point.y } : null);
+    }
   };
 
   const finishRubberBand = useCallback(() => {
@@ -702,138 +748,121 @@ export const App = () => {
     const y1 = Math.min(rubberBand.y1, rubberBand.y2);
     const x2 = Math.max(rubberBand.x1, rubberBand.x2);
     const y2 = Math.max(rubberBand.y1, rubberBand.y2);
-    setElements(prev =>
-      prev.map(el => {
-        const b = getElementBounds(el);
-        return {
-          ...el,
-          isSelected:
-            (b.x + b.width >= x1 &&
-              b.x <= x2 &&
-              b.y + b.height >= y1 &&
-              b.y <= y2) ||
-            el.isSelected
-        };
-      })
-    );
+    setElements(prev => prev.map(el => {
+      const b = getElementBoundsLocal(el);
+      return { ...el, isSelected: (b.x + b.width >= x1 && b.x <= x2 && b.y + b.height >= y1 && b.y <= y2) || el.isSelected };
+    }));
     setRubberBand(null);
   }, [rubberBand]);
 
   const handleMouseUp = () => {
+    if (ui.action === "connecting" && connectionOrigin.current && currentId.current) {
+      const currentEl = elements.find(el => el.id === currentId.current);
+      const endId = currentEl?.boundElementIds?.end;
+      if (endId) {
+        const targetEl = elements.find(el => el.id === endId);
+        const sourceEl = elements.find(el => el.id === connectionOrigin.current!.elementId);
+        if (sourceEl && targetEl) handleAutoAttachConnector(sourceEl, targetEl);
+      }
+    }
+
     if (["drawing", "moving", "resizing", "connecting", "erasing"].includes(ui.action)) {
+      setConnectors(prev => ConnectorService.refreshAllConnectors(prev, elements));
       pushToHistoryWithSync(elements);
     }
     if (rubberBand) finishRubberBand();
+    
+    setConnectionPreview(null);
     ui.setAction("none");
     currentId.current = null;
     resizeOrigin.current = null;
+    reshapeOrigin.current = null;
     connectionOrigin.current = null;
+    selectionOrigin.current = null;
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (ui.selectedTool !== "select") return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
-    const clicked = [...elements]
-      .reverse()
-      .find(el => isPointInElement(point.x, point.y, el));
-    if (clicked) {
-      setEditingElementId(clicked.id);
-      setEditingText(clicked.text || "");
-      setEditingPosition({ x: clicked.x, y: clicked.y });
-    }
+  const handleDoubleClick = () => {
+    // Handled via e.detail === 2 in handleMouseDown
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const point = screenToCanvas(
-      e.clientX,
-      e.clientY,
-      canvas,
-      pan,
-      zoom
-    );
-    const clicked = [...elements]
-      .reverse()
-      .find(el => isPointInElement(point.x, point.y, el));
-    ui.setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      elementId: clicked?.id
-    });
+    const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
+    const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+    if (clicked && !clicked.isSelected) {
+      setElements(elements.map(el => el.id === clicked.id ? { ...el, isSelected: true } : { ...el, isSelected: false }));
+    }
+    ui.setContextMenu({ x: e.clientX, y: e.clientY, elementId: clicked?.id });
   };
 
   // Touch support
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
-      touchStartRef.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
-        time: Date.now(),
-        dist: 0
-      };
-      const me = new MouseEvent("mousedown", {
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY
-      });
-      canvasRef.current?.dispatchEvent(me);
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now(), dist: 0 };
+      const fakeEvent = {
+        clientX: touch.clientX, clientY: touch.clientY,
+        shiftKey: false, detail: 1, button: 0,
+        target: canvasRef.current, currentTarget: canvasRef.current,
+        preventDefault: () => e.preventDefault(),
+        stopPropagation: () => e.stopPropagation(),
+        nativeEvent: { device: "touch" },
+        buttons: 1, altKey: false, ctrlKey: false, metaKey: false,
+        getModifierState: () => false,
+        movementX: 0, movementY: 0,
+      } as unknown as React.MouseEvent;
+      handleMouseDown(fakeEvent);
     }
   };
 
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (ui.contextMenu) {
-        ui.setContextMenu(null);
-      }
-    };
-    document.addEventListener("click", handleClickOutside);
-    return () => document.removeEventListener("click", handleClickOutside);
-  }, [ui.contextMenu]);
-
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 1 && touchStartRef.current) {
-      const me = new MouseEvent("mousemove", {
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY,
-        movementX:
-          e.touches[0].clientX - touchStartRef.current.x,
-        movementY:
-          e.touches[0].clientY - touchStartRef.current.y
-      });
-      canvasRef.current?.dispatchEvent(me);
-      touchStartRef.current.x = e.touches[0].clientX;
-      touchStartRef.current.y = e.touches[0].clientY;
+      const touch = e.touches[0];
+      const fakeEvent = {
+        clientX: touch.clientX, clientY: touch.clientY,
+        shiftKey: false, detail: 1, button: 0,
+        target: canvasRef.current, currentTarget: canvasRef.current,
+        preventDefault: () => e.preventDefault(),
+        stopPropagation: () => e.stopPropagation(),
+        nativeEvent: { device: "touch" },
+        buttons: 1, altKey: false, ctrlKey: false, metaKey: false,
+        getModifierState: () => false,
+        movementX: touch.clientX - touchStartRef.current.x,
+        movementY: touch.clientY - touchStartRef.current.y,
+      } as unknown as React.MouseEvent;
+      handleMouseMove(fakeEvent);
+      touchStartRef.current.x = touch.clientX;
+      touchStartRef.current.y = touch.clientY;
     } else if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       if (touchStartRef.current?.dist) {
         const delta = dist - touchStartRef.current.dist;
-        if (Math.abs(delta) > 5)
-          setZoom(z =>
-            Math.max(0.1, Math.min(5, z + delta * 0.005))
-          );
+        if (Math.abs(delta) > 5) setZoom(z => Math.max(0.1, Math.min(5, z + delta * 0.005)));
       }
       touchStartRef.current = { ...touchStartRef.current!, dist };
     }
   };
 
   const handleTouchEnd = () => {
-    const me = new MouseEvent("mouseup", {});
-    canvasRef.current?.dispatchEvent(me);
+    handleMouseUp();
     if (isLongPress(touchStartRef.current)) {
-      const me2 = new MouseEvent("contextmenu", {
-        clientX: touchStartRef.current!.x,
-        clientY: touchStartRef.current!.y
-      });
-      handleContextMenu(me2 as unknown as React.MouseEvent);
+      const fakeEvent = {
+        clientX: touchStartRef.current!.x, clientY: touchStartRef.current!.y,
+        preventDefault: () => {}, shiftKey: false, detail: 1, button: 2,
+        target: canvasRef.current,
+      } as unknown as React.MouseEvent;
+      handleContextMenu(fakeEvent);
     }
     touchStartRef.current = null;
   };
+
+  useEffect(() => {
+    const handleClickOutside = () => { if (ui.contextMenu) ui.setContextMenu(null); };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, [ui.contextMenu]);
 
   const getCursor = () => {
     if (ui.selectedTool === "hand" || ui.action === "panning") return "grab";
@@ -846,41 +875,46 @@ export const App = () => {
 
   const selCount = getSelectedElements().length;
 
+  const editingElement = editingElementId ? elements.find(el => el.id === editingElementId) : null;
+  const textareaStyle = editingElement ? {
+    left: `${editingElement.x * zoom + pan.x}px`,
+    top: `${editingElement.y * zoom + pan.y}px`,
+    width: `${Math.max(editingElement.width * zoom, 120)}px`,
+    minHeight: `${Math.max(editingElement.height * zoom, 36)}px`,
+    fontFamily: defaultTextStyle === "mono" ? "monospace" : "Inter, sans-serif",
+    fontSize: `${Math.max(16, editingElement.height * 0.6)}px`,
+    color: editingElement.color,
+  } : {};
+
   if (!authToken || !user) {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
   }
-
   if (!currentRoom) {
     return <RoomsPage token={authToken} username={user.username} onJoinRoom={handleJoinRoom} onLogout={handleLogout} />;
   }
 
   if (ui.presentationMode) {
     return (
-      <div
-        className="h-screen w-screen bg-black flex items-center justify-center"
-        onClick={() =>
-          ui.setPresentationIndex((i) =>
-            Math.min(i + 1, elements.length)
-          )
-        }
-      >
+      <div className="h-screen w-screen bg-black flex items-center justify-center" onClick={() => ui.setPresentationIndex(i => Math.min(i + 1, elements.length))}>
         <div className="text-white text-center">
-          <Canvas
-            ref={canvasRef}
-            elements={elements.slice(0, ui.presentationIndex + 1)}
-            pan={{ x: 0, y: 0 }}
+          <Canvas 
+            ref={canvasRef} 
+            elements={elements.slice(0, ui.presentationIndex + 1)} 
+            connectors={[]} 
+            pan={{ x: 0, y: 0 }} 
             zoom={1}
-            showGrid={false}
-            rubberBand={null}
-            onMouseDown={() => {}}
-            onMouseMove={() => {}}
-            onMouseUp={() => {}}
-            onDoubleClick={() => {}}
+            showGrid={false} 
+            rubberBand={null} 
+            defaultTextStyle={defaultTextStyle}
+            editingElementId={null}
+            onMouseDown={() => {}} 
+            onMouseMove={() => {}} 
+            onMouseUp={() => {}} 
+            onDoubleClick={() => {}} 
             cursor="pointer"
           />
           <div className="fixed bottom-8 left-1/2 -translate-x-1/2 text-gray-400 text-sm">
-            {ui.presentationIndex + 1} / {elements.length + 1} · Click or → to
-            advance · Esc to exit
+            {ui.presentationIndex + 1} / {elements.length + 1} · Click or → to advance · Esc to exit
           </div>
         </div>
       </div>
@@ -888,312 +922,126 @@ export const App = () => {
   }
 
   return (
-    <div
-      className="h-screen w-screen bg-gray-50 overflow-hidden relative select-none"
-      style={{ touchAction: "none" }}
-    >
-      <div className="fixed top-8 right-4 z-50 flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur-md text-sm">
+    <div className="h-screen w-screen bg-gray-50 overflow-hidden relative select-none" style={{ touchAction: "none" }}>
+      
+      {/* Room Info */}
+      <div className="fixed top-8 right-4 z-[100] flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur-md text-sm">
         <div className="font-semibold">Room: {currentRoom?.name}</div>
         <div className="text-slate-600">Logged in as {user?.username}</div>
         <div className="flex gap-2">
-          <button
-            onClick={() => {
-              setCurrentRoom(null);
-              localStorage.removeItem('collab-room');
-            }}
-            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Leave room
-          </button>
-          <button
-            onClick={handleLogout}
-            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
-          >
-            Logout
-          </button>
+          <button onClick={() => { setCurrentRoom(null); localStorage.removeItem("collab-room"); }}
+            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100">Leave room</button>
+          <button onClick={handleLogout}
+            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100">Logout</button>
         </div>
       </div>
+
       {/* Board tabs */}
-      <div className="fixed top-0 left-0 right-0 h-8 bg-gray-100 flex items-center gap-1 px-4 z-50 overflow-x-auto">
-        {boards.map((board) => (
-          <button
-            key={board.id}
-            onClick={() => {
-              pushToHistoryWithSync(elements);
-              setActiveBoardId(board.id);
-            }}
-            className={`px-3 py-0.5 text-xs rounded-t ${
-              board.id === activeBoardId
-                ? "bg-white font-semibold"
-                : "hover:bg-gray-200"
-            }`}
-          >
+      <div className="fixed top-0 left-0 right-0 h-8 bg-gray-100 flex items-center gap-1 px-4 z-[100] overflow-x-auto">
+        {boards.map(board => (
+          <button key={board.id} onClick={() => { pushToHistoryWithSync(elements); setActiveBoardId(board.id); }}
+            className={`px-3 py-0.5 text-xs rounded-t ${board.id === activeBoardId ? "bg-white font-semibold" : "hover:bg-gray-200"}`}>
             {board.name}
           </button>
         ))}
-        <button
-          onClick={() => {
-            const id = uuid();
-            setBoards([
-              ...boards,
-              {
-                id,
-                name: `Board ${boards.length + 1}`,
-                elements: []
-              }
-            ]);
-            setActiveBoardId(id);
-          }}
-          className="px-2 text-xs hover:bg-gray-200 rounded"
-        >
-          +
-        </button>
+        <button onClick={() => { const id = uuid(); setBoards([...boards, { id, name: `Board ${boards.length + 1}`, elements: [] }]); setActiveBoardId(id); }}
+          className="px-2 text-xs hover:bg-gray-200 rounded">+</button>
       </div>
 
       <TopBar
-        onUndo={undo}
-        onRedo={redo}
-        onClear={() => pushToHistoryWithSync([])}
-        onExport={exportCanvas}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onAlignLeft={() => alignSelected("left")}
-        onAlignCenter={() => alignSelected("center")}
-        onAlignRight={() => alignSelected("right")}
-        onAlignTop={() => alignSelected("top")}
-        onAlignMiddle={() => alignSelected("middle")}
-        onAlignBottom={() => alignSelected("bottom")}
-        onDistributeH={() =>
-          alignSelected("distribute-h")
-        }
-        onDistributeV={() =>
-          alignSelected("distribute-v")
-        }
-        onGroup={groupSelected}
-        onUngroup={ungroupSelected}
-        onBringToFront={bringToFront}
-        onSendToBack={sendToBack}
-        onBringForward={bringForward}
-        onSendBackward={sendBackward}
-        onToggleLock={toggleLock}
-        onExportSVG={exportSVG}
-        onExportPDF={exportPDF}
-        hasSelection={selCount > 0}
-        hasMultiSelection={selCount > 1}
-        onImportImage={handleImportImage}
-        onZoomToFit={zoomToFit}
-        onFullscreen={() =>
-          document.documentElement.requestFullscreen()
-        }
-        onToggleComments={() =>
-          ui.setCommentsPanelOpen(!ui.commentsPanelOpen)
-        }
-        onToggleLayers={() =>
-          ui.setLayersPanelOpen(!ui.layersPanelOpen)
-        }
-        onToggleProperties={() =>
-          ui.setPropertiesPanelOpen(!ui.propertiesPanelOpen)
-        }
-        onToggleTemplates={() =>
-          ui.setTemplatesOpen(!ui.templatesOpen)
-        }
-        onPresentation={() => {
-          ui.setPresentationMode(true);
-          ui.setPresentationIndex(-1);
-          document.documentElement.requestFullscreen();
-        }}
-        historyIndex={historyIndex}
-        historyLength={history.length}
+        onUndo={undo} onRedo={redo} onClear={() => pushToHistoryWithSync([])} onExport={exportCanvas}
+        canUndo={canUndo} canRedo={canRedo}
+        onAlignLeft={() => alignSelected("left")} onAlignCenter={() => alignSelected("center")} onAlignRight={() => alignSelected("right")}
+        onAlignTop={() => alignSelected("top")} onAlignMiddle={() => alignSelected("middle")} onAlignBottom={() => alignSelected("bottom")}
+        onDistributeH={() => alignSelected("distribute-h")} onDistributeV={() => alignSelected("distribute-v")}
+        onGroup={groupSelected} onUngroup={ungroupSelected}
+        onBringToFront={bringToFront} onSendToBack={sendToBack} onBringForward={bringForward} onSendBackward={sendBackward}
+        onToggleLock={toggleLock} onExportSVG={exportSVG} onExportPDF={exportPDF}
+        hasSelection={selCount > 0} hasMultiSelection={selCount > 1}
+        onImportImage={handleImportImage} onZoomToFit={zoomToFit}
+        onFullscreen={() => document.documentElement.requestFullscreen()}
+        onToggleComments={() => ui.setCommentsPanelOpen(!ui.commentsPanelOpen)}
+        onToggleLayers={() => ui.setLayersPanelOpen(!ui.layersPanelOpen)}
+        onToggleProperties={() => ui.setPropertiesPanelOpen(!ui.propertiesPanelOpen)}
+        onToggleTemplates={() => ui.setTemplatesOpen(!ui.templatesOpen)}
+        onPresentation={() => { ui.setPresentationMode(true); ui.setPresentationIndex(-1); document.documentElement.requestFullscreen(); }}
+        historyIndex={historyIndex} historyLength={history.length} onCycleTextStyle={cycleTextStyle}
       />
 
-      {/* Chat / comments panel */}
+      {/* Chat panel */}
       {ui.commentsPanelOpen && (
-        <div className="fixed right-4 top-20 z-50 w-80 h-[60vh] bg-white shadow-xl rounded-2xl border p-3 overflow-y-auto">
+        <div className="fixed right-4 top-20 z-[60] w-80 h-[60vh] bg-white shadow-xl rounded-2xl border p-3 overflow-y-auto flex flex-col">
           <h3 className="font-semibold mb-2">Room chat</h3>
-          <div className="space-y-2 text-sm mb-2">
-            {messages && messages.length === 0 && <div className="text-gray-400">No messages yet.</div>}
-            {messages && messages.map((m) => (
-              <div key={m.id || `${m.user_id}-${m.created_at}`} className="border-b pb-2">
+          <div className="space-y-2 text-sm mb-2 flex-1 overflow-y-auto">
+            {(!messages || messages.length === 0) && <div className="text-gray-400">No messages yet.</div>}
+            {messages.map(m => (
+              <div key={m.id || m.created_at} className="border-b pb-2">
                 <div className="text-xs text-gray-500">{m.username} <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleTimeString()}</span></div>
                 <div className="text-sm">{m.message}</div>
               </div>
             ))}
           </div>
           <div className="mt-auto">
-            <ChatInput onSend={(text) => { if (text.trim()) { sendChat(text.trim()); setMessages((prev) => [...prev, { id: `local-${Date.now()}`, username: user?.username || 'me', message: text.trim(), created_at: new Date().toISOString() }]); } }} />
+            <ChatInput onSend={(text) => { 
+              if (text.trim()) { 
+                sendChat(text.trim()); 
+                setMessages(prev => [...prev, { 
+                  id: `local-${Date.now()}`, 
+                  username: user?.username || 'me', 
+                  message: text.trim(), 
+                  created_at: new Date().toISOString() 
+                }]); 
+              } 
+            }} />
           </div>
         </div>
       )}
 
-      <div className="fixed left-4 top-20 z-40 rounded-2xl border bg-white/95 px-4 py-2 text-xs shadow-lg backdrop-blur-md">
+      {/* Connection status */}
+      <div className="fixed left-4 top-20 z-40 pointer-events-none rounded-2xl border bg-white/95 px-4 py-2 text-xs shadow-lg backdrop-blur-md">
         <div className="font-semibold">Realtime status</div>
-        <div className="mt-1">
-          Connected:{" "}
-          <span
-            className={`font-bold ${
-              socketConnected
-                ? "text-green-700"
-                : "text-red-700"
-            }`}
-          >
-            {socketConnected ? "Yes" : "No"}
-          </span>
-        </div>
-        <div>
-          Peers: <span className="font-semibold">{peerCount}</span>
-        </div>
+        <div className="mt-1">Connected: <span className={`font-bold ${socketConnected ? "text-green-700" : "text-red-700"}`}>{socketConnected ? "Yes" : "No"}</span></div>
+        <div>Peers: <span className="font-semibold">{peerCount}</span></div>
         <div className="text-gray-500">Server: {SOCKET_URL}</div>
       </div>
 
       <ToolSidebar
-        selectedTool={ui.selectedTool}
-        setSelectedTool={ui.setSelectedTool}
-        strokeColor={drawingStyle.strokeColor}
-        fillColor={drawingStyle.fillColor}
-        onStrokeColorChange={drawingStyle.setStrokeColor}
-        onFillColorChange={drawingStyle.setFillColor}
-        strokeWidth={drawingStyle.strokeWidth}
-        onStrokeWidthChange={drawingStyle.setStrokeWidth}
-        opacity={drawingStyle.opacity}
-        onOpacityChange={drawingStyle.setOpacity}
-        lineStyle={drawingStyle.lineStyle}
-        onLineStyleChange={drawingStyle.setLineStyle}
-        arrowStyle={drawingStyle.arrowStyle}
-        onArrowStyleChange={drawingStyle.setArrowStyle}
-        eraserSize={drawingStyle.eraserSize}
-        onEraserSizeChange={drawingStyle.setEraserSize}
-        presetColors={drawingStyle.presetColors}
-        recentColors={drawingStyle.recentColors}
-        onOpenLibrary={() =>
-          ui.setLibraryOpen(!ui.isLibraryOpen)
-        }
-        onAddGuide={addGuide}
-        canvasRef={canvasRef}
-        pan={pan}
-        zoom={zoom}
+        selectedTool={ui.selectedTool} setSelectedTool={ui.setSelectedTool}
+        strokeColor={drawingStyle.strokeColor} fillColor={drawingStyle.fillColor}
+        onStrokeColorChange={drawingStyle.setStrokeColor} onFillColorChange={drawingStyle.setFillColor}
+        strokeWidth={drawingStyle.strokeWidth} onStrokeWidthChange={drawingStyle.setStrokeWidth}
+        opacity={drawingStyle.opacity} onOpacityChange={drawingStyle.setOpacity}
+        lineStyle={drawingStyle.lineStyle} onLineStyleChange={drawingStyle.setLineStyle}
+        arrowStyle={drawingStyle.arrowStyle} onArrowStyleChange={drawingStyle.setArrowStyle}
+        eraserSize={drawingStyle.eraserSize} onEraserSizeChange={drawingStyle.setEraserSize}
+        presetColors={drawingStyle.presetColors} recentColors={drawingStyle.recentColors}
+        onOpenLibrary={() => ui.setLibraryOpen(!ui.isLibraryOpen)}
+        onAddGuide={addGuide} canvasRef={canvasRef} pan={pan} zoom={zoom}
       />
 
       {/* Properties panel */}
       {ui.propertiesPanelOpen && getSelected() && (
-        <div className="fixed right-4 top-20 bg-white shadow-xl rounded-2xl border p-4 z-50 w-56">
+        <div className="fixed right-4 top-20 z-[55] bg-white shadow-xl rounded-2xl border p-4 w-56 max-h-[70vh] overflow-y-auto">
           <h3 className="font-bold text-sm mb-3">Properties</h3>
           {(() => {
             const el = getSelected();
             if (!el) return null;
             return (
               <div className="space-y-2 text-xs">
+                <div>Type: <span className="font-mono">{el.tool}</span></div>
+                <div className="flex gap-2"><span>X:</span><input type="number" value={Math.round(el.x)} onChange={e => updateElements(el.id, { x: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
+                <div className="flex gap-2"><span>Y:</span><input type="number" value={Math.round(el.y)} onChange={e => updateElements(el.id, { y: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
+                <div className="flex gap-2"><span>W:</span><input type="number" value={Math.round(el.width)} onChange={e => updateElements(el.id, { width: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
+                <div className="flex gap-2"><span>H:</span><input type="number" value={Math.round(el.height)} onChange={e => updateElements(el.id, { height: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
+                <div><label>Color</label><input type="color" value={el.color} onChange={e => updateElements(el.id, { color: e.target.value })} className="w-full" /></div>
+                <div><label>Opacity ({Math.round((el.opacity ?? 1) * 100)}%)</label><input type="range" min={0} max={100} value={(el.opacity ?? 1) * 100} onChange={e => updateElements(el.id, { opacity: Number(e.target.value) / 100 })} className="w-full" /></div>
                 <div>
-                  Type: <span className="font-mono">{el.tool}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span>X:</span>
-                  <input
-                    type="number"
-                    value={Math.round(el.x)}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? { ...ee, x: Number(e.target.value) }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-16 border rounded px-1"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <span>Y:</span>
-                  <input
-                    type="number"
-                    value={Math.round(el.y)}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? { ...ee, y: Number(e.target.value) }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-16 border rounded px-1"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <span>W:</span>
-                  <input
-                    type="number"
-                    value={Math.round(el.width)}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? { ...ee, width: Number(e.target.value) }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-16 border rounded px-1"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <span>H:</span>
-                  <input
-                    type="number"
-                    value={Math.round(el.height)}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? { ...ee, height: Number(e.target.value) }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-16 border rounded px-1"
-                  />
-                </div>
-                <div>
-                  <label>Color</label>
-                  <input
-                    type="color"
-                    value={el.color}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? { ...ee, color: e.target.value }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-full"
-                  />
-                </div>
-                <div>
-                  <label>
-                    Opacity ({Math.round((el.opacity ?? 1) * 100)}%)
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={(el.opacity ?? 1) * 100}
-                    onChange={(e) =>
-                      pushToHistoryWithSync(
-                        elements.map((ee) =>
-                          ee.id === el.id
-                            ? {
-                                ...ee,
-                                opacity:
-                                  Number(e.target.value) / 100
-                              }
-                            : ee
-                        )
-                      )
-                    }
-                    className="w-full"
-                  />
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Text Style</label>
+                  <select value={el.textStyle || defaultTextStyle} onChange={e => updateElements(el.id, { textStyle: e.target.value as TextStyle })} className="w-full border rounded px-2 py-1 text-xs">
+                    <option value="rough">Rough (default)</option>
+                    <option value="clean">Clean</option>
+                    <option value="mono">Mono</option>
+                  </select>
                 </div>
               </div>
             );
@@ -1203,451 +1051,137 @@ export const App = () => {
 
       {/* Layers panel */}
       {ui.layersPanelOpen && (
-        <div className="fixed right-4 top-20 bg-white shadow-xl rounded-2xl border p-4 z-50 w-56 max-h-96 overflow-y-auto">
+        <div className="fixed right-4 top-20 z-[50] bg-white shadow-xl rounded-2xl border p-4 w-56 max-h-96 overflow-y-auto">
           <h3 className="font-bold text-sm mb-3">Layers</h3>
-          {[...elements]
-            .reverse()
-            .map((el, i) => (
-              <div
-                key={el.id}
-                className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs ${
-                  el.isSelected
-                    ? "bg-blue-100"
-                    : "hover:bg-gray-50"
-                }`}
-                onClick={() =>
-                  setElements(
-                    elements.map((ee) => ({
-                      ...ee,
-                      isSelected: ee.id === el.id
-                    }))
-                  )
-                }
-              >
-                <span className="text-gray-400 w-4">
-                  {elements.length - i}
-                </span>
-                <span className="flex-1 truncate">
-                  {el.tool}
-                  {el.text
-                    ? `: ${el.text.slice(0, 15)}`
-                    : ""}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleLock();
-                  }}
-                  className="text-gray-400 hover:text-gray-700"
-                >
-                  {el.locked ? "🔒" : "🔓"}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // emit delete to server
-                    deleteElement?.(el.id);
-                    pushToHistoryWithSync(
-                      elements.filter((ee) => ee.id !== el.id)
-                    );
-                  }}
-                  className="text-red-400 hover:text-red-600"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Comments panel */}
-      {ui.commentsPanelOpen && (
-        <div className="fixed right-4 top-20 bg-white shadow-xl rounded-2xl border p-4 z-50 w-64 max-h-96 overflow-y-auto">
-          <h3 className="font-bold text-sm mb-3">Comments</h3>
-          {comments
-            .filter((c) => !c.resolved)
-            .map((c) => (
-              <div
-                key={c.id}
-                className="text-xs border-b pb-2 mb-2"
-              >
-                <div className="text-gray-500">
-                  {new Date(
-                    c.timestamp
-                  ).toLocaleString()}
-                </div>
-                <div className="my-1">{c.text}</div>
-                <button
-                  onClick={() =>
-                    setComments(
-                      comments.map((cc) =>
-                        cc.id === c.id
-                          ? { ...cc, resolved: true }
-                          : cc
-                      )
-                    )
-                  }
-                  className="text-green-600"
-                >
-                  ✓ Resolve
-                </button>
-              </div>
-            ))}
-          {
-            comments.filter((c) => !c.resolved).length ===
-              0 && (
-              <div className="text-xs text-gray-400">
-                No comments. Use Select tool, right-click to
-                add.
-              </div>
-            )
-          }
+          {[...elements].reverse().map((el, i) => (
+            <div key={el.id} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs ${el.isSelected ? "bg-blue-100" : "hover:bg-gray-50"}`}
+              onClick={() => setElements(elements.map(ee => ({ ...ee, isSelected: ee.id === el.id })))}>
+              <span className="text-gray-400 w-4">{elements.length - i}</span>
+              <span className="flex-1 truncate">{el.tool}{el.text ? `: ${el.text.slice(0, 15)}` : ""}</span>
+              <button onClick={e => { e.stopPropagation(); toggleLock(); }} className="text-gray-400 hover:text-gray-700">{el.locked ? "🔒" : "🔓"}</button>
+              <button onClick={e => { e.stopPropagation(); setConnectors(prev => prev.filter(c => c.sourceId !== el.id && c.targetId !== el.id)); pushToHistoryWithSync(elements.filter(ee => ee.id !== el.id)); }}
+                className="text-red-400 hover:text-red-600">✕</button>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Templates modal */}
       {ui.templatesOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center"
-          onClick={() => ui.setTemplatesOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 w-96 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/30 z-[100] flex items-center justify-center" onClick={() => ui.setTemplatesOpen(false)}>
+          <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="font-bold text-lg mb-4">Templates</h2>
             <div className="grid grid-cols-2 gap-3">
-              {Object.keys(TEMPLATES).map((name) => (
-                <button
-                  key={name}
-                  onClick={() => loadTemplate(name)}
-                  className="p-4 border rounded-xl hover:bg-blue-50 hover:border-blue-200 text-sm font-medium"
-                >
-                  {name}
-                </button>
+              {Object.keys(TEMPLATES).map(name => (
+                <button key={name} onClick={() => loadTemplate(name)} className="p-4 border rounded-xl hover:bg-blue-50 hover:border-blue-200 text-sm font-medium">{name}</button>
               ))}
             </div>
           </div>
         </div>
       )}
 
+      {/* Icon Library */}
       {ui.isLibraryOpen && (
-        <IconLibrary
-          onSelect={(icon) => {
-            const id = uuid();
-            pushToHistoryWithSync([
-              ...elements,
-              {
-                id,
-                tool: "icon" as any,
-                x: 100,
-                y: 100,
-                width: 50,
-                height: 50,
-                color: icon.color,
-                fillColor: icon.color,
-                strokeWidth: 0,
-                opacity: drawingStyle.opacity / 100,
-                icon: icon.name,
-                iconName: icon.name,
-                iconColor: icon.color,
-                svgPaths: icon.svgPaths,
-                viewBox: icon.viewBox
-              }
-            ]);
-            ui.setLibraryOpen(false);
-          }}
-          onClose={() => ui.setLibraryOpen(false)}
-        />
+        <IconLibrary onSelect={(icon) => {
+          pushToHistoryWithSync([...elements, {
+            id: uuid(), tool: "icon" as any, x: 100, y: 100, width: 50, height: 50,
+            color: icon.color, fillColor: icon.color, strokeWidth: 0, opacity: drawingStyle.opacity / 100,
+            icon: icon.name, iconName: icon.name, iconColor: icon.color, svgPaths: icon.svgPaths, viewBox: icon.viewBox, resizable: true,
+          }]);
+          ui.setLibraryOpen(false);
+        }} onClose={() => ui.setLibraryOpen(false)} />
       )}
 
-      {/* Zoom controls + minimap */}
+      {/* Zoom controls */}
       <div className="fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-xl border bg-white p-3 shadow-lg">
-        <button
-          onClick={() =>
-            setZoom((z) => Math.min(z * 1.1, 4))
-          }
-          className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold"
-        >
-          +
-        </button>
-        <span className="font-mono text-xs w-12 text-center">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          onClick={() =>
-            setZoom((z) =>
-              Math.max(z / 1.1, 0.1)
-            )
-          }
-          className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold"
-        >
-          −
-        </button>
+        <button onClick={() => setZoom(z => Math.min(z * 1.2, 4))} className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold">+</button>
+        <span className="font-mono text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom(z => Math.max(z / 1.2, 0.1))} className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold">−</button>
         <div className="w-px h-4 bg-gray-200" />
-        <button
-          onClick={() =>
-            ui.setShowGrid(!ui.showGrid)
-          }
-          className={`rounded px-2 py-1 text-xs ${
-            ui.showGrid
-              ? "bg-blue-100 text-blue-700"
-              : "hover:bg-gray-100"
-          }`}
-        >
-          Grid
-        </button>
-        <button
-          onClick={zoomToFit}
-          className="rounded px-2 py-1 hover:bg-gray-100 text-xs"
-          title="Fit to screen"
-        >
-          ⊞
-        </button>
-        <button
-          onClick={() =>
-            ui.setShowMinimap(!ui.showMinimap)
-          }
-          className={`rounded px-2 py-1 text-xs ${
-            ui.showMinimap
-              ? "bg-blue-100 text-blue-700"
-              : "hover:bg-gray-100"
-          }`}
-        >
-          Map
-        </button>
+        <button onClick={() => ui.setShowGrid(!ui.showGrid)} className={`rounded px-2 py-1 text-xs ${ui.showGrid ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100"}`}>Grid</button>
+        <button onClick={zoomToFit} className="rounded px-2 py-1 hover:bg-gray-100 text-xs" title="Fit to screen">⊞</button>
+        <button onClick={() => ui.setShowMinimap(!ui.showMinimap)} className={`rounded px-2 py-1 text-xs ${ui.showMinimap ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100"}`}>Map</button>
       </div>
 
       {/* Minimap */}
       {ui.showMinimap && (
-        <div
-          className="fixed bottom-16 right-4 z-30 w-48 h-36 bg-white border rounded-lg shadow-lg overflow-hidden"
-          onClick={() => addGuide("horizontal", 100)}
-          title="Click to add a guide"
-        >
-          <canvas
-            width={192}
-            height={144}
-            className="w-full h-full opacity-70"
-            ref={(c) => {
-              if (!c) return;
-              const ctx = c.getContext("2d");
-              if (!ctx) return;
-              ctx.fillStyle = "#fff";
-              ctx.fillRect(0, 0, 192, 144);
-              const scale = 0.05;
-              ctx.save();
-              ctx.scale(scale, scale);
-              ctx.translate(
-                (-pan.x / zoom) * 0.5,
-                (-pan.y / zoom) * 0.5
-              );
-              elements.forEach((el) => {
-                if (
-                  ["rect", "circle", "diamond"].includes(
-                    el.tool
-                  )
-                ) {
-                  ctx.strokeStyle = el.color;
-                  ctx.lineWidth = el.strokeWidth;
-                  ctx.strokeRect(
-                    el.x,
-                    el.y,
-                    el.width || 10,
-                    el.height || 10
-                  );
-                }
-              });
-              ctx.restore();
-            }}
-          />
+        <div className="fixed bottom-16 right-4 z-30 w-48 h-36 bg-white border rounded-lg shadow-lg overflow-hidden">
+          <canvas width={192} height={144} className="w-full h-full opacity-70" ref={c => {
+            if (!c) return;
+            const ctx = c.getContext("2d");
+            if (!ctx) return;
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, 192, 144);
+            const scale = 0.05;
+            ctx.save();
+            ctx.scale(scale, scale);
+            ctx.translate((-pan.x / zoom) * 0.5, (-pan.y / zoom) * 0.5);
+            elements.forEach(el => {
+              if (["rect", "circle", "diamond"].includes(el.tool)) {
+                ctx.strokeStyle = el.color;
+                ctx.lineWidth = el.strokeWidth;
+                ctx.strokeRect(el.x, el.y, el.width || 10, el.height || 10);
+              }
+            });
+            ctx.restore();
+          }} />
         </div>
       )}
 
       {/* Text editing overlay */}
-      {editingElementId && (
+      {editingElementId && editingElement && (
         <textarea
+          ref={textareaRef}
           autoFocus
           value={editingText}
-          onChange={(e) => setEditingText(e.target.value)}
+          onChange={e => setEditingText(e.target.value)}
           onBlur={handleTextBlurEvent}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              (e.target as HTMLTextAreaElement).blur();
-            }
+          onKeyDown={e => {
+            if (e.key === "Escape") { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
           }}
-          className="fixed z-50 border-2 border-blue-500 bg-white p-2 outline-none resize text-base rounded shadow-lg"
+          className="fixed z-[200] border-2 border-blue-500 bg-white p-2 outline-none resize text-base rounded shadow-lg"
           style={{
-            left: `${
-              editingPosition.x * zoom + pan.x
-            }px`,
-            top: `${editingPosition.y * zoom + pan.y}px`,
-            font: "16px Inter, sans-serif",
-            color: drawingStyle.strokeColor,
-            minWidth: "120px",
-            minHeight: "36px",
-            maxWidth: "400px"
+            left: textareaStyle.left,
+            top: textareaStyle.top,
+            minWidth: textareaStyle.width,
+            minHeight: textareaStyle.minHeight,
+            fontFamily: textareaStyle.fontFamily,
+            fontSize: textareaStyle.fontSize,
+            color: textareaStyle.color,
+            maxWidth: "400px",
           }}
         />
       )}
 
       {/* Context menu */}
       {ui.contextMenu && (
-        <div
-          className="fixed z-50 bg-white border rounded-xl shadow-xl py-1 text-sm"
-          style={{
-            left: ui.contextMenu.x,
-            top: ui.contextMenu.y
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="fixed z-[200] bg-white border rounded-xl shadow-xl py-1 text-sm" style={{ left: ui.contextMenu.x, top: ui.contextMenu.y }} onClick={e => e.stopPropagation()}>
           {ui.contextMenu.elementId ? (
             <>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  clipboardRef.current = elements
-                    .filter(
-                      (el) =>
-                        el.isSelected
-                    )
-                    .map((el) => ({
-                      ...el,
-                      isSelected: false
-                    }));
-                  ui.setContextMenu(null);
-                }}
-              >
-                Copy
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  clipboardRef.current = elements
-                    .filter(
-                      (el) =>
-                        el.isSelected &&
-                        !el.locked
-                    )
-                    .map((el) => ({
-                      ...el,
-                      isSelected: false
-                    }));
-                  pushToHistoryWithSync(
-                    elements.filter(
-                      (el) =>
-                        !el.isSelected ||
-                        el.locked
-                    )
-                  );
-                  ui.setContextMenu(null);
-                }}
-              >
-                Cut
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  duplicateSelected();
-                  ui.setContextMenu(null);
-                }}
-              >
-                Duplicate
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  pushToHistoryWithSync(
-                    elements.filter(
-                      (el) =>
-                        !el.isSelected ||
-                        el.locked
-                    )
-                  );
-                  ui.setContextMenu(null);
-                }}
-              >
-                Delete
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  toggleLock();
-                  ui.setContextMenu(null);
-                }}
-              >
-                Lock/Unlock
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  bringToFront();
-                  ui.setContextMenu(null);
-                }}
-              >
-                Bring to Front
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  sendToBack();
-                  ui.setContextMenu(null);
-                }}
-              >
-                Send to Back
-              </button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { clipboardRef.current = elements.filter(el => el.isSelected).map(el => ({ ...el, isSelected: false })); ui.setContextMenu(null); }}>Copy</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { clipboardRef.current = elements.filter(el => el.isSelected && !el.locked).map(el => ({ ...el, isSelected: false })); pushToHistoryWithSync(elements.filter(el => !el.isSelected || el.locked)); ui.setContextMenu(null); }}>Cut</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { duplicateSelected(); ui.setContextMenu(null); }}>Duplicate</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { pushToHistoryWithSync(elements.filter(el => !el.isSelected || el.locked)); ui.setContextMenu(null); }}>Delete</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { toggleLock(); ui.setContextMenu(null); }}>Lock/Unlock</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { bringToFront(); ui.setContextMenu(null); }}>Bring to Front</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { sendToBack(); ui.setContextMenu(null); }}>Send to Back</button>
             </>
           ) : (
             <>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  pasteElements();
-                  ui.setContextMenu(null);
-                }}
-              >
-                Paste
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  setElements(
-                    elements.map((el) => ({
-                      ...el,
-                      isSelected: true
-                    }))
-                  );
-                  ui.setContextMenu(null);
-                }}
-              >
-                Select All
-              </button>
-              <button
-                className="w-full px-4 py-1.5 hover:bg-gray-100 text-left"
-                onClick={() => {
-                  ui.setShowGrid(
-                    !ui.showGrid
-                  );
-                  ui.setContextMenu(null);
-                }}
-              >
-                Toggle Grid
-              </button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { pasteElements(); ui.setContextMenu(null); }}>Paste</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { setElements(elements.map(el => ({ ...el, isSelected: true }))); ui.setContextMenu(null); }}>Select All</button>
+              <button className="w-full px-4 py-1.5 hover:bg-gray-100 text-left" onClick={() => { ui.setShowGrid(!ui.showGrid); ui.setContextMenu(null); }}>Toggle Grid</button>
             </>
           )}
         </div>
       )}
 
-      {/* Main canvas container */}
-      <div
-        ref={containerRef}
-        className="absolute inset-0 z-0"
-        style={{ touchAction: "none" }}
-      >
+      {/* Main canvas */}
+      <div ref={containerRef} className="absolute inset-0 z-0" style={{ touchAction: "none" }}>
         <Canvas
           ref={canvasRef}
           elements={elements}
+          connectors={connectors}
           pan={pan}
           zoom={zoom}
           showGrid={ui.showGrid}
@@ -1655,6 +1189,9 @@ export const App = () => {
           bgTheme={bgTheme}
           guides={guides}
           comments={comments}
+          defaultTextStyle={defaultTextStyle}
+          connectionPreview={connectionPreview}
+          editingElementId={editingElementId}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -1666,6 +1203,16 @@ export const App = () => {
           cursor={getCursor()}
         />
       </div>
+    </div>
+  );
+};
+
+const ChatInput: React.FC<{ onSend: (text: string) => void }> = ({ onSend }) => {
+  const [text, setText] = useState('');
+  return (
+    <div className="flex gap-2">
+      <input value={text} onChange={e => setText(e.target.value)} className="flex-1 rounded-2xl border px-3 py-2" placeholder="Write a message" onKeyDown={e => { if (e.key === 'Enter') { onSend(text); setText(''); } }} />
+      <button onClick={() => { if (text.trim()) { onSend(text); setText(''); } }} className="rounded-2xl bg-slate-900 text-white px-3 py-2">Send</button>
     </div>
   );
 };

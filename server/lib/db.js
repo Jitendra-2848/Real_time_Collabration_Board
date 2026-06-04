@@ -13,7 +13,7 @@ export const pool = new Pool({
 //   port: Number(process.env.PG_PORT || 5432),
   connectionString:process.env.DATABASE_URL,
   max: 20,
-  idleTimeoutMillis: 30000,
+  idleTimeoutMillis: 80000,
   connectionTimeoutMillis: 2000,
 });
 

@@ -83,7 +83,7 @@ npm start
 Backend runs on:
 
 ```bash
-http://localhost:3000
+http://localhost:8000
 ```
 
 ### Start Frontend
@@ -142,7 +142,7 @@ npm run test:load # Run load testing
 Create a `.env` file inside the `server` directory:
 
 ```env
-PORT=3000
+PORT=8000
 ```
 
 ---

@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 
-const API = process.env.API_URL || 'http://localhost:3000';
-const SOCKET = process.env.SERVER_URL || 'http://localhost:3000';
+const API = process.env.API_URL || 'http://localhost:8000';
+const SOCKET = process.env.SERVER_URL || 'http://localhost:8000';
 
 async function http(path, method='GET', body, token) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
