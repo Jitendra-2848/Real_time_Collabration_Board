@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Undo, Redo, Download, Trash2, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, Unlock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn } from "lucide-react";
+import { Undo, Redo, Download, Trash2, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, Unlock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn, Type } from "lucide-react";
 
 interface Props {
   onUndo: () => void; onRedo: () => void; onClear: () => void; onExport: () => void;
@@ -29,6 +29,7 @@ interface Props {
   onPresentation?: () => void;
   // History
   historyIndex?: number; historyLength?: number;
+  onCycleTextStyle?: () => void;
 }
 
 export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onClear, onExport, canUndo, canRedo,
@@ -38,6 +39,7 @@ export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onClear, onExport, can
   onToggleLock, onExportSVG, onExportPDF,
   hasSelection, hasMultiSelection, onImportImage, onZoomToFit, onFullscreen,
   onToggleComments, onToggleLayers, onToggleProperties, onToggleTemplates, onPresentation,
+  onCycleTextStyle,
   historyIndex, historyLength,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +87,7 @@ export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onClear, onExport, can
       <div className="w-px h-5 bg-gray-200 mx-0.5"/>
 
       <button onClick={onPresentation} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Presentation"><Monitor size={16}/></button>
+      <button onClick={onCycleTextStyle} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Switch text style"><Type size={16}/></button>
       <button onClick={onZoomToFit} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Zoom to Fit"><ZoomIn size={16}/></button>
       <button onClick={onFullscreen} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Fullscreen (F11)"><Fullscreen size={16}/></button>
 

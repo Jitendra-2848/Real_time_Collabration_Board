@@ -23,6 +23,17 @@ const TECH_ICONS = [
   { name: "Jenkins", icon: Si.SiJenkins, color: "#D24939" },
   { name: "GitHub", icon: Si.SiGithub, color: "#181717" },
   { name: "GitLab", icon: Si.SiGitlab, color: "#FC6D26" },
+  { name: "TypeScript", icon: Si.SiTypescript, color: "#3178C6" },
+  { name: "JavaScript", icon: Si.SiJavascript, color: "#F7DF1E" },
+  { name: "HTML5", icon: Si.SiHtml5, color: "#E34F26" },
+  { name: "CSS3", icon: Si.SiCss3, color: "#1572B6" },
+  { name: "Git", icon: Si.SiGit, color: "#F05032" },
+  { name: "VS Code", icon: Si.SiVisualstudiocode, color: "#0078D7" },
+  { name: "Figma", icon: Si.SiFigma, color: "#F24E1E" },
+  { name: "Tailwind", icon: Si.SiTailwindcss, color: "#38B2AC" },
+  { name: "AWS", icon: Si.SiAmazonaws, color: "#FF9900" },
+  { name: "Linux", icon: Si.SiLinux, color: "#FCC624" },
+  { name: "Azure", icon: Si.SiMicrosoftazure, color: "#0089D6" },
 ];
 
 // Extract raw SVG path strings from react-icons
@@ -58,7 +69,7 @@ export const IconLibrary: React.FC<Props> = ({ onSelect, onClose }) => {
   );
 
   return (
-    <div className="fixed left-20 top-20 w-80 bg-white shadow-2xl rounded-2xl border border-gray-200 p-4 z-50">
+    <div className="fixed left-20 top-20 w-96 bg-white shadow-2xl rounded-2xl border border-gray-200 p-4 z-50">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-gray-700">Component Library</h3>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
@@ -76,7 +87,7 @@ export const IconLibrary: React.FC<Props> = ({ onSelect, onClose }) => {
         />
       </div>
 
-      <div className="grid flex-1 grid-cols-6 gap-2 overflow-y-auto pr-1 max-h-72">
+      <div className="grid flex-1 grid-cols-5 gap-3 overflow-y-auto pr-1 max-h-80">
         {filtered.map((icon) => {
           const svgData = extractPathData(icon.icon);
           return (
@@ -88,10 +99,11 @@ export const IconLibrary: React.FC<Props> = ({ onSelect, onClose }) => {
                 svgPaths: svgData.paths, 
                 viewBox: svgData.viewBox 
               })}
-              className="flex flex-col items-center justify-center rounded-xl border border-transparent p-2 transition-all hover:border-blue-200 hover:bg-blue-50"
+              className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-all hover:border-blue-300 hover:bg-blue-50"
+              style={{ minHeight: 84 }}
             >
-              <icon.icon size={24} color={icon.color} />
-              <span className="mt-1 w-full truncate text-center text-[7px] text-gray-500">
+              <icon.icon size={26} color={icon.color} />
+              <span className="mt-2 w-full truncate text-center text-[9px] text-gray-600">
                 {icon.name}
               </span>
             </button>

@@ -1,0 +1,86 @@
+version: "3.8"
+
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx
+    ports:
+      - "8000:80"
+
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+    depends_on:
+      - app
+      - app1
+      - app2
+      - app3
+      - app4
+      - app5
+      - app6
+      - app7
+  app:
+    image: jitendra2848/whiteboard:latest
+    container_name: app
+    environment:
+      - INSTANCE_ID=1
+
+    env_file:
+      - .env
+  app1:
+    image: jitendra2848/whiteboard:latest
+    container_name: app1
+    environment:
+      - INSTANCE_ID=2
+
+    env_file:
+      - .env
+  app2:
+    image: jitendra2848/whiteboard:latest
+    container_name: app2
+    environment:
+      - INSTANCE_ID=3
+
+    env_file:
+      - .env
+  app3:
+    image: jitendra2848/whiteboard:latest
+    container_name: app3
+    environment:
+      - INSTANCE_ID=4
+
+    env_file:
+      - .env
+  app4:
+    image: jitendra2848/whiteboard:latest
+    container_name: app4
+    environment:
+      - INSTANCE_ID=5
+
+    env_file:
+      - .env
+  app5:
+    image: jitendra2848/whiteboard:latest
+    container_name: app5
+    environment:
+      - INSTANCE_ID=6
+
+    env_file:
+      - .env
+  app6:
+    image: jitendra2848/whiteboard:latest
+    container_name: app6
+    environment:
+      - INSTANCE_ID=7
+
+    env_file:
+      - .env
+  app7:
+    image: jitendra2848/whiteboard:latest
+    container_name: app7
+    environment:
+      - INSTANCE_ID=8
+
+    env_file:
+      - .env
+ 
