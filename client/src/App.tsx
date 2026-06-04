@@ -69,14 +69,38 @@ export const App = () => {
 
   // Socket
   const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || "http://localhost:3000";
-  const { socketConnected, peerCount, sendBoardState } = useSocket(
+  const [messages, setMessages] = useState<any[]>([]);
+  const { socketRef, socketConnected, peerCount, sendBoardState, deleteElement, sendChat } = useSocket(
     SOCKET_URL,
     currentRoom?.id ?? null,
     authToken,
     (updatedElements) => {
       setElements(updatedElements);
+    },
+    (msgs) => {
+      setMessages(msgs as any[]);
+    }
+    ,
+    (req) => {
+      // Simple owner prompt to accept/reject join
+      const accept = window.confirm(`${req.user.username} requests to join. Accept?`);
+      try {
+        socketRef?.current?.emit('join-response', { socketId: req.socketId, accept });
+      } catch (err) {
+        console.error('Failed to send join-response', err);
+      }
     }
   );
+
+  const ChatInput: React.FC<{ onSend: (text: string) => void }> = ({ onSend }) => {
+    const [text, setText] = useState('');
+    return (
+      <div className="flex gap-2">
+        <input value={text} onChange={e => setText(e.target.value)} className="flex-1 rounded-2xl border px-3 py-2" placeholder="Write a message" />
+        <button onClick={() => { if (text.trim()) { onSend(text); setText(''); } }} className="rounded-2xl bg-slate-900 text-white px-3 py-2">Send</button>
+      </div>
+    );
+  };
 
   // Auto-save
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -982,6 +1006,25 @@ export const App = () => {
         historyLength={history.length}
       />
 
+      {/* Chat / comments panel */}
+      {ui.commentsPanelOpen && (
+        <div className="fixed right-4 top-20 z-50 w-80 h-[60vh] bg-white shadow-xl rounded-2xl border p-3 overflow-y-auto">
+          <h3 className="font-semibold mb-2">Room chat</h3>
+          <div className="space-y-2 text-sm mb-2">
+            {messages && messages.length === 0 && <div className="text-gray-400">No messages yet.</div>}
+            {messages && messages.map((m) => (
+              <div key={m.id || `${m.user_id}-${m.created_at}`} className="border-b pb-2">
+                <div className="text-xs text-gray-500">{m.username} <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleTimeString()}</span></div>
+                <div className="text-sm">{m.message}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-auto">
+            <ChatInput onSend={(text) => { if (text.trim()) { sendChat(text.trim()); setMessages((prev) => [...prev, { id: `local-${Date.now()}`, username: user?.username || 'me', message: text.trim(), created_at: new Date().toISOString() }]); } }} />
+          </div>
+        </div>
+      )}
+
       <div className="fixed left-4 top-20 z-40 rounded-2xl border bg-white/95 px-4 py-2 text-xs shadow-lg backdrop-blur-md">
         <div className="font-semibold">Realtime status</div>
         <div className="mt-1">
@@ -1202,6 +1245,8 @@ export const App = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    // emit delete to server
+                    deleteElement?.(el.id);
                     pushToHistoryWithSync(
                       elements.filter((ee) => ee.id !== el.id)
                     );

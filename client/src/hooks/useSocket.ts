@@ -9,6 +9,8 @@ export const useSocket = (
   onElementsUpdate: (
     elements: Element[] | ((prev: Element[]) => Element[]),
   ) => void,
+  onMessagesUpdate?: (messages: any[] | ((prev: any[]) => any[])) => void,
+  onJoinRequest?: (req: { socketId: string; user: { id: number; username: string } }) => void,
 ) => {
   const socketRef = useRef<Socket | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -40,6 +42,18 @@ export const useSocket = (
       onElementsUpdate(serverElements);
     });
 
+    socket.on('chat-history', (messages: any[]) => {
+      if (onMessagesUpdate) onMessagesUpdate(messages);
+    });
+
+    socket.on('chat-message', (msg: any) => {
+      if (onMessagesUpdate) onMessagesUpdate((prev: any[]) => [...(prev || []), msg]);
+    });
+
+    socket.on('join-request', (req: any) => {
+      if (onJoinRequest) onJoinRequest(req);
+    });
+
     socket.on("element-created", (newElement: Element) => {
       onElementsUpdate((prev: Element[]) => [...prev, newElement]);
     });
@@ -65,10 +79,18 @@ export const useSocket = (
     });
 
     return () => {
-      socket.disconnect();
+      // socket.disconnect();
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("presence");
+      socket.off("init-state");
+      socket.off("element-created");
+      socket.off("element-updated");
+      socket.off("element-deleted");
+      socket.off("board-state");
       socketRef.current = null;
     };
-  }, [SOCKET_URL, roomId, token, onElementsUpdate]);
+  }, [SOCKET_URL, roomId, token]);
 
   const sendBoardState = (elements: Element[]) => {
     if (!socketRef.current?.connected) return;
@@ -78,10 +100,40 @@ export const useSocket = (
     );
   };
 
+  const createElement = (newElement: Element) => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit("element-create", {
+      ...newElement,
+      lastModified: Date.now(),
+    });
+  };
+
+  const updateElement = (updatedElement: Element) => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit("element-update", {
+      ...updatedElement,
+      lastModified: Date.now(),
+    });
+  };
+
+  const deleteElement = (elementId: string) => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit("element-delete", elementId);
+  };
+
+  const sendChat = (message: string) => {
+    if (!socketRef.current?.connected) return;
+    socketRef.current.emit('chat-message', { message });
+  };
+
   return {
     socketRef,
     socketConnected,
     peerCount,
     sendBoardState,
+    createElement,
+    updateElement,
+    deleteElement,
+    sendChat,
   };
 };

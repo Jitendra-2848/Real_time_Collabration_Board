@@ -1,4 +1,4 @@
-import { createRoom as createRoomDb, listRooms as listRoomsDb, findRoomById } from '../lib/db.js';
+import { createRoom as createRoomDb, listRooms as listRoomsDb, findRoomById, fetchMessages } from '../lib/db.js';
 
 export async function listRooms(req, res) {
   const rooms = await listRoomsDb();
@@ -7,6 +7,7 @@ export async function listRooms(req, res) {
 
 export async function createRoom(req, res) {
   const { name } = req.body;
+  const { access_mode } = req.body;
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Room name is required.' });
   }
@@ -16,8 +17,15 @@ export async function createRoom(req, res) {
     return res.status(400).json({ error: 'Room name cannot be empty.' });
   }
 
-  const room = await createRoomDb(normalized, req.user.userId);
+  const room = await createRoomDb(normalized, req.user.userId, access_mode || 'open');
   res.status(201).json({ room });
+}
+
+export async function getRoomMessages(req, res) {
+  const roomId = Number(req.params.roomId);
+  if (Number.isNaN(roomId)) return res.status(400).json({ error: 'Invalid room ID.' });
+  const messages = await fetchMessages(roomId);
+  res.json({ messages });
 }
 
 export async function getRoomById(req, res) {

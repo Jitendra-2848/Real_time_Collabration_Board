@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createRoom, fetchRooms } from '../lib/api';
+import { createRoom, fetchRooms, fetchRoomById } from '../lib/api';
 
 interface RoomsPageProps {
   token: string;
@@ -11,6 +11,8 @@ interface RoomsPageProps {
 export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPageProps) => {
   const [rooms, setRooms] = useState<Array<{ id: number; name: string; created_by: string }>>([]);
   const [newRoom, setNewRoom] = useState('');
+  const [accessMode, setAccessMode] = useState<'open'|'link'|'manual'>('open');
+  const [joinId, setJoinId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -30,7 +32,7 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
     if (!newRoom.trim()) return;
     setError('');
     setLoading(true);
-    const result = await createRoom(token, newRoom.trim());
+    const result = await createRoom(token, newRoom.trim(), accessMode);
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -38,6 +40,17 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
     }
     setRooms(prev => [result.room, ...prev]);
     setNewRoom('');
+  };
+
+  const handleJoinById = async () => {
+    setError('');
+    const id = Number(joinId);
+    if (!id || Number.isNaN(id)) return setError('Invalid room id');
+    setLoading(true);
+    const res = await fetchRoomById(token, id);
+    setLoading(false);
+    if (res.error) return setError(res.error);
+    onJoinRoom(res.room.id, res.room.name);
   };
 
   return (
@@ -66,6 +79,11 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
                 onChange={(event) => setNewRoom(event.target.value)}
                 placeholder="Room name"
               />
+              <select value={accessMode} onChange={e => setAccessMode(e.target.value as any)} className="rounded-2xl border border-slate-300 px-3 py-2 text-sm">
+                <option value="open">Open</option>
+                <option value="link">Link only</option>
+                <option value="manual">Manual approval</option>
+              </select>
               <button
                 className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                 onClick={handleCreateRoom}
@@ -86,6 +104,14 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
         <div className="mt-8">
           <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-600">Available rooms</h2>
           <div className="mt-3 space-y-3">
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+              Or connect by room id / link:
+              <div className="flex gap-2 mt-2">
+                <input value={joinId} onChange={e => setJoinId(e.target.value)} placeholder="Enter room id" className="flex-1 rounded-2xl border border-slate-300 px-4 py-2" />
+                <button onClick={handleJoinById} className="rounded-2xl border border-slate-300 px-4 py-2">Connect</button>
+              </div>
+              {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+            </div>
             {rooms.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
                 No rooms available yet. Create one to start collaborating.
