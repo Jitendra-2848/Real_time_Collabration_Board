@@ -5,6 +5,7 @@ export type Tool =
   | "rect" 
   | "circle" 
   | "diamond" 
+  | "cylinder"
   | "arrow" 
   | "line"
   | "text" 
@@ -80,6 +81,7 @@ export interface Element {
   iconColor?: string;
   svgPaths?: string[];
   viewBox?: string;
+  styleMode?: "shadow" | "plain" | "watercolor";
   isSelected?: boolean;
   boundElementIds?: { start?: string | null; end?: string | null };
   groupId?: string;

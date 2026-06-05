@@ -213,10 +213,15 @@ subClient.on('pmessage', async (pattern, channel, message) => {
     const { roomId, type } = parsed;
     const roomKey = String(roomId);
 
-    if (type === 'owner-notify') {
-      const payload = JSON.parse(message);
+    let payload = null;
+    try {
+      payload = JSON.parse(message);
+    } catch (e) {
+      // ignore parsing errors for non-json payloads
+    }
 
-      if (payload.type === 'join-request') {
+    if (type === 'owner-notify') {
+      if (payload && payload.type === 'join-request') {
         // Forward to any *locally connected* owner sockets. Redis already
         // fans this out to all instances — that's the whole point.
         const ownerSocketIds = await getOwners(roomKey);

@@ -1,4 +1,4 @@
-export type Tool = "select" | "hand" | "pen" | "rect" | "circle" | "line" | "arrow" | "text" | "eraser" | "icon" | "sticky" | "highlighter" | "eyedropper";
+export type Tool = "select" | "hand" | "pen" | "rect" | "circle" | "diamond" | "cylinder" | "line" | "arrow" | "text" | "eraser" | "icon" | "sticky" | "highlighter" | "eyedropper";
 export type Action = "none" | "drawing" | "moving" | "panning" | "erasing" | "resizing" | "connecting" | "commenting";
 export type LineStyle = "solid" | "dashed" | "dotted";
 export type ArrowStyle = "default" | "filled" | "none";
@@ -9,6 +9,8 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
   p: "pen",
   r: "rect",
   c: "circle",
+  d: "diamond",
+  y: "cylinder",
   l: "line",
   a: "arrow",
   t: "text",
@@ -18,3 +20,4 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
 
 export const RESIZE_HANDLE_SIZE = 8;
 export const EDGE_THRESHOLD = 10;
+

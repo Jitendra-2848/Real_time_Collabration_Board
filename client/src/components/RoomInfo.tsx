@@ -18,13 +18,36 @@ export const RoomInfo: React.FC<Props> = ({
   onLeaveRoom,
   onLogout,
 }) => {
+  const [isCollapsed, setIsCollapsed] = React.useState(false);
+
+  if (isCollapsed) {
+    return (
+      <button
+        onClick={() => setIsCollapsed(false)}
+        className="fixed top-24 right-4 z-[100] flex items-center gap-2 rounded-full border border-slate-200/60 bg-white/90 px-4 py-2 shadow-lg backdrop-blur-md text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all duration-200"
+        title="Show Room Details"
+      >
+        <Info size={14} className="text-indigo-500" />
+        <span>Room: {currentRoom?.name || "None"}</span>
+      </button>
+    );
+  }
+
   return (
     <div className="fixed top-24 right-4 z-[100] flex flex-col gap-3.5 rounded-3xl border border-slate-200/60 bg-white/85 p-5 shadow-xl backdrop-blur-md text-sm transition-all duration-300 hover:shadow-2xl w-64">
-      <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
-        <Info size={16} className="text-slate-500" />
-        <span className="font-semibold text-slate-800 truncate">
-          Room: {currentRoom?.name || "None"}
-        </span>
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+        <div className="flex items-center gap-2">
+          <Info size={16} className="text-slate-500" />
+          <span className="font-semibold text-slate-800 truncate max-w-[130px]" title={currentRoom?.name || "None"}>
+            Room: {currentRoom?.name || "None"}
+          </span>
+        </div>
+        <button
+          onClick={() => setIsCollapsed(true)}
+          className="text-xs text-slate-400 hover:text-slate-600 transition-colors px-1.5 py-0.5 hover:bg-slate-100 rounded-md font-medium"
+        >
+          Hide
+        </button>
       </div>
 
       <div className="space-y-1.5 text-xs text-slate-600">

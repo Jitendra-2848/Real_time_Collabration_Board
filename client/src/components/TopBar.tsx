@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Undo, Redo, Download, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn, Type } from "lucide-react";
+import { Undo, Redo, Download, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn, Type, Wand2 } from "lucide-react";
 
 interface Props {
   onUndo: () => void; onRedo: () => void; onExport: () => void;
@@ -28,6 +28,7 @@ interface Props {
   // History
   historyIndex?: number; historyLength?: number;
   onCycleTextStyle?: () => void;
+  onToggleDiagramEditor?: () => void;
 }
 
 export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onExport, canUndo, canRedo,
@@ -38,6 +39,7 @@ export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onExport, canUndo, can
   hasSelection, hasMultiSelection, onImportImage, onZoomToFit, onFullscreen,
   onToggleComments, onToggleLayers, onToggleProperties, onToggleTemplates, onPresentation,
   onCycleTextStyle,
+  onToggleDiagramEditor,
   historyIndex, historyLength,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +97,7 @@ export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onExport, canUndo, can
       <button onClick={onToggleLayers} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Layers"><Layers size={16}/></button>
       <button onClick={onToggleProperties} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Properties"><SlidersHorizontal size={16}/></button>
       <button onClick={onToggleTemplates} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Templates"><Layout size={16}/></button>
+      <button onClick={onToggleDiagramEditor} className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg" title="Diagram-as-Code"><Wand2 size={16}/></button>
     </div>
   );
 };

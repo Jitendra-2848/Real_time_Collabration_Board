@@ -14,6 +14,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { ZoomControls } from "./components/ZoomControls";
+import { DiagramPanel } from "./components/DiagramPanel";
 import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
@@ -77,6 +78,7 @@ export const App = () => {
   const [connectionPreview, setConnectionPreview] = useState<{
     sourceId: string; sourceAnchor: string; targetId: string | null; mousePos: Point;
   } | null>(null);
+  const [diagramPanelOpen, setDiagramPanelOpen] = useState(false);
 
   // Boards
   const [boards, setBoards] = useState<BoardService.Board[]>([{ id: "board-1", name: "Board 1", elements: [] }]);
@@ -389,11 +391,11 @@ export const App = () => {
     pushToHistoryWithSync(elements.map(el => (el.id === id ? { ...el, ...updates } : el)));
   }, [elements, pushToHistoryWithSync]);
 
-  const handleAutoAttachConnector = useCallback((sourceEl: Element, targetEl: Element) => {
+  const handleAutoAttachConnector = useCallback((sourceEl: Element, targetEl: Element, customElements?: Element[]) => {
     if (sourceEl.id === targetEl.id) return;
     const { sourceAnchor, targetAnchor } = findBestAnchorPair(sourceEl, targetEl);
     const newConnector = ConnectorService.createAutoConnector(sourceEl, targetEl, [], {
-      arrowStyle: drawingStyle.arrowStyle || "default",
+      arrowStyle: "filled", 
       lineStyle: drawingStyle.lineStyle || "solid",
       color: drawingStyle.strokeColor || "#000",
       strokeWidth: drawingStyle.strokeWidth || 2,
@@ -402,7 +404,8 @@ export const App = () => {
     newConnector.targetAnchor = `${targetEl.id}-${targetAnchor.side}`;
     
     setConnectors(prev => [...prev, newConnector]);
-    const updatedElements = elements.map(el => {
+    const baseElements = customElements || elements;
+    const updatedElements = baseElements.map(el => {
       if (el.id === sourceEl.id || el.id === targetEl.id) {
         const connectedIds = [...(el.connectedElementIds || [])];
         const otherId = el.id === sourceEl.id ? targetEl.id : sourceEl.id;
@@ -500,13 +503,25 @@ export const App = () => {
 
     // Double click
     if (e.detail === 2) {
-      if (ui.selectedTool === "select" && clickedElement) {
-        const otherSelected = elements.filter(el => el.isSelected && el.id !== clickedElement.id);
-        if (otherSelected.length > 0) {
-          handleAutoAttachConnector(clickedElement, otherSelected[0]);
+      if (clickedElement) {
+        if (ui.selectedTool === "select") {
+          const otherSelected = elements.filter(el => el.isSelected && el.id !== clickedElement.id);
+          if (otherSelected.length > 0) {
+            handleAutoAttachConnector(clickedElement, otherSelected[0]);
+          }
+          setEditingElementId(clickedElement.id);
+          setEditingText(clickedElement.text || "");
+          return;
         }
-        setEditingElementId(clickedElement.id);
-        setEditingText(clickedElement.text || "");
+      } else {
+        const id = uuid();
+        currentId.current = id;
+        const newEl = createTextElement(point, drawingStyle.strokeColor, drawingStyle.opacity);
+        newEl.textStyle = defaultTextStyle;
+        newEl.resizable = true;
+        setElements([...elements, { ...newEl, id }]);
+        setEditingElementId(id);
+        setEditingText("");
         return;
       }
     }
@@ -762,19 +777,28 @@ export const App = () => {
   }, [rubberBand]);
 
   const handleMouseUp = () => {
+    let nextElements = elements;
+    let didConnect = false;
+
     if (ui.action === "connecting" && connectionOrigin.current && currentId.current) {
       const currentEl = elements.find(el => el.id === currentId.current);
       const endId = currentEl?.boundElementIds?.end;
       if (endId) {
-        const targetEl = elements.find(el => el.id === endId);
-        const sourceEl = elements.find(el => el.id === connectionOrigin.current!.elementId);
-        if (sourceEl && targetEl) handleAutoAttachConnector(sourceEl, targetEl);
+        nextElements = elements.filter(el => el.id !== currentId.current);
+        const targetEl = nextElements.find(el => el.id === endId);
+        const sourceEl = nextElements.find(el => el.id === connectionOrigin.current!.elementId);
+        if (sourceEl && targetEl) {
+          handleAutoAttachConnector(sourceEl, targetEl, nextElements);
+          didConnect = true;
+        }
       }
     }
 
     if (["drawing", "moving", "resizing", "connecting", "erasing"].includes(ui.action)) {
-      setConnectors(prev => ConnectorService.refreshAllConnectors(prev, elements));
-      pushToHistoryWithSync(elements);
+      setConnectors(prev => ConnectorService.refreshAllConnectors(prev, nextElements));
+      if (!didConnect) {
+        pushToHistoryWithSync(nextElements);
+      }
     }
     if (rubberBand) finishRubberBand();
     
@@ -987,6 +1011,7 @@ export const App = () => {
         onToggleLayers={() => ui.setLayersPanelOpen(!ui.layersPanelOpen)}
         onToggleProperties={() => ui.setPropertiesPanelOpen(!ui.propertiesPanelOpen)}
         onToggleTemplates={() => ui.setTemplatesOpen(!ui.templatesOpen)}
+        onToggleDiagramEditor={() => setDiagramPanelOpen(!diagramPanelOpen)}
         onPresentation={() => {
           ui.setPresentationMode(true);
           ui.setPresentationIndex(-1);
@@ -996,6 +1021,21 @@ export const App = () => {
         historyLength={history.length}
         onCycleTextStyle={cycleTextStyle}
       />
+
+      {/* Diagram-as-Code Panel */}
+      {diagramPanelOpen && (
+        <DiagramPanel
+          onGenerate={(parsedElements, parsedConnectors) => {
+            const newElements = [...elements, ...parsedElements];
+            if (parsedConnectors.length > 0) {
+              setConnectors(prev => [...prev, ...parsedConnectors]);
+            }
+            pushToHistoryWithSync(newElements);
+            setDiagramPanelOpen(false);
+          }}
+          onClose={() => setDiagramPanelOpen(false)}
+        />
+      )}
 
       {/* Chat Panel */}
       {ui.commentsPanelOpen && (

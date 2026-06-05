@@ -92,7 +92,7 @@ export const applyTextStyle = (
   } else if (resolved === "clean") {
     ctx.font = `${fontSize}px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
   } else {
-    ctx.font = `${fontSize}px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
+    ctx.font = `${fontSize}px 'Caveat', 'Comic Sans MS', 'Comic Sans', cursive, sans-serif`;
     ctx.shadowColor = "rgba(0,0,0,0.04)";
     ctx.shadowBlur = 1;
   }
@@ -101,6 +101,67 @@ export const applyTextStyle = (
 // =========================================================
 // 3. ELEMENT RENDERERS
 // =========================================================
+
+const drawInternalIconAndText = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  el: Element,
+  defaultTextStyle: TextStyle
+) => {
+  const text = el.text || "";
+  const hasIcon = el.svgPaths && el.svgPaths.length > 0 && el.viewBox;
+
+  ctx.save();
+  applyTextStyle(ctx, 13, el.textStyle, defaultTextStyle);
+  ctx.fillStyle = el.color || "#1e293b";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  if (hasIcon && text) {
+    const iconSize = 16;
+    const gap = 6;
+    const textWidth = ctx.measureText(text).width;
+    const totalWidth = iconSize + gap + textWidth;
+
+    const startX = x + (w - totalWidth) / 2;
+    const centerY = y + h / 2;
+
+    ctx.save();
+    ctx.translate(startX, centerY - iconSize / 2);
+    const [vbX, vbY, vbW, vbH] = el.viewBox!.split(' ').map(Number);
+    const scale = Math.min(iconSize / vbW, iconSize / vbH);
+    ctx.translate((iconSize - vbW * scale) / 2, (iconSize - vbH * scale) / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-vbX, -vbY);
+    ctx.fillStyle = el.iconColor || el.color || "#1e293b";
+    ctx.strokeStyle = "transparent";
+    el.svgPaths!.forEach((pathStr) => drawSvgElement(ctx, pathStr));
+    ctx.restore();
+
+    ctx.textAlign = "left";
+    ctx.fillText(text, startX + iconSize + gap, centerY);
+  } else if (hasIcon) {
+    const iconSize = 20;
+    ctx.save();
+    ctx.translate(x + (w - iconSize) / 2, y + (h - iconSize) / 2);
+    const [vbX, vbY, vbW, vbH] = el.viewBox!.split(' ').map(Number);
+    const scale = Math.min(iconSize / vbW, iconSize / vbH);
+    ctx.translate((iconSize - vbW * scale) / 2, (iconSize - vbH * scale) / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-vbX, -vbY);
+    ctx.fillStyle = el.iconColor || el.color || "#1e293b";
+    ctx.strokeStyle = "transparent";
+    el.svgPaths!.forEach((pathStr) => drawSvgElement(ctx, pathStr));
+    ctx.restore();
+  } else if (text) {
+    ctx.fillText(text, x + w / 2, y + h / 2);
+  }
+
+  ctx.restore();
+};
 
 const drawRect = (
   ctx: CanvasRenderingContext2D, 
@@ -120,18 +181,21 @@ const drawRect = (
     ctx.translate(-(x + w/2), -(y + h/2)); 
   }
   
-  // Shadow for gold/special elements
   if (el.fillColor === "#FFD700") { 
     ctx.shadowColor = "rgba(0,0,0,0.2)"; 
     ctx.shadowBlur = 8; 
     ctx.shadowOffsetX = 2; 
     ctx.shadowOffsetY = 2; 
+  } else if (el.styleMode === "shadow") {
+    ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 4;
   }
   
   if (el.fillColor) ctx.fillRect(x, y, w, h);
   ctx.strokeRect(x, y, w, h);
   
-  // Image rendering
   if (el.imageData && typeof el.imageData === 'string') {
     const img = new Image(); 
     img.src = el.imageData;
@@ -140,14 +204,15 @@ const drawRect = (
     }
   }
   
-  // Reset shadow
+  ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0; 
   ctx.shadowOffsetX = 0; 
   ctx.shadowOffsetY = 0;
   
   if (el.rotation) ctx.restore();
   
-  // Label rendering
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
+  
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
     ctx.fillStyle = el.color; 
@@ -157,7 +222,6 @@ const drawRect = (
       x + w/2 + (el.label.offsetX || 0), 
       y + (el.label.offsetY || -10)
     );
-    ctx.shadowBlur = 0;
   }
 };
 
@@ -171,10 +235,25 @@ const drawEllipse = (
   defaultTextStyle: TextStyle = "rough"
 ) => {
   applyShapeStyles(ctx, el);
+  
+  if (el.styleMode === "shadow") {
+    ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 4;
+  }
+
   ctx.beginPath();
   ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
   if (el.fillColor) ctx.fill();
   ctx.stroke();
+
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0; 
+  ctx.shadowOffsetX = 0; 
+  ctx.shadowOffsetY = 0;
+  
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
   
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
@@ -185,7 +264,6 @@ const drawEllipse = (
       x + w/2 + (el.label.offsetX || 0), 
       y + (el.label.offsetY || -10)
     );
-    ctx.shadowBlur = 0;
   }
 };
 
@@ -199,6 +277,14 @@ const drawDiamond = (
   defaultTextStyle: TextStyle = "rough"
 ) => {
   applyShapeStyles(ctx, el);
+  
+  if (el.styleMode === "shadow") {
+    ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 4;
+  }
+
   ctx.beginPath();
   ctx.moveTo(x + w / 2, y); 
   ctx.lineTo(x + w, y + h / 2);
@@ -208,12 +294,91 @@ const drawDiamond = (
   if (el.fillColor) ctx.fill();
   ctx.stroke();
   
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0; 
+  ctx.shadowOffsetX = 0; 
+  ctx.shadowOffsetY = 0;
+
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
+
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
     ctx.fillStyle = el.color; 
     ctx.textAlign = "center";
     ctx.fillText(el.label.text, x + w/2, y + h/2);
-    ctx.shadowBlur = 0;
+  }
+};
+
+const drawCylinder = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  el: Element,
+  defaultTextStyle: TextStyle = "rough"
+) => {
+  applyShapeStyles(ctx, el);
+
+  if (el.rotation) {
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate((el.rotation * Math.PI) / 180);
+    ctx.translate(-(x + w / 2), -(y + h / 2));
+  }
+
+  if (el.styleMode === "shadow") {
+    ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 4;
+  }
+
+  const rx = w / 2;
+  const ry = Math.min(15, h / 5);
+
+  if (el.fillColor) {
+    ctx.fillStyle = el.fillColor;
+    ctx.beginPath();
+    ctx.ellipse(x + rx, y + ry, rx, ry, 0, 0, Math.PI * 2);
+    ctx.rect(x, y + ry, w, h - 2 * ry);
+    ctx.ellipse(x + rx, y + h - ry, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.ellipse(x + rx, y + h - ry, rx, ry, 0, 0, Math.PI);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x, y + ry);
+  ctx.lineTo(x, y + h - ry);
+  ctx.moveTo(x + w, y + ry);
+  ctx.lineTo(x + w, y + h - ry);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(x + rx, y + ry, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0; 
+  ctx.shadowOffsetX = 0; 
+  ctx.shadowOffsetY = 0;
+
+  if (el.rotation) ctx.restore();
+
+  drawInternalIconAndText(ctx, x, y + ry, w, h - 2 * ry, el, defaultTextStyle);
+
+  if (el.label?.text) {
+    applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
+    ctx.fillStyle = el.color;
+    ctx.textAlign = "center";
+    ctx.fillText(
+      el.label.text,
+      x + w / 2 + (el.label.offsetX || 0),
+      y + (el.label.offsetY || -10)
+    );
   }
 };
 
@@ -556,6 +721,34 @@ export const renderConnector = (
       ctx.stroke();
     }
   }
+
+  if (connector.label) {
+    const t = 0.5;
+    const mt = 1 - t;
+    const bx = mt * mt * mt * sourceX + 3 * mt * mt * t * cp1x + 3 * mt * t * t * cp2x + t * t * t * targetX;
+    const by = mt * mt * mt * sourceY + 3 * mt * mt * t * cp1y + 3 * mt * t * t * cp2y + t * t * t * targetY;
+
+    ctx.save();
+    applyTextStyle(ctx, 11, connector.labelStyle, _defaultTextStyle);
+    ctx.fillStyle = connector.color || "#1e293b";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const textWidth = ctx.measureText(connector.label).width;
+    const padX = 6;
+    const padY = 4;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+    ctx.beginPath();
+    ctx.roundRect(bx - textWidth / 2 - padX, by - 8 - padY, textWidth + padX * 2, 16 + padY * 2, 6);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(203, 213, 225, 0.6)"; 
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = connector.color || "#1e293b";
+    ctx.fillText(connector.label, bx, by);
+    ctx.restore();
+  }
   
   ctx.restore();
 };
@@ -640,16 +833,33 @@ const drawReshapeHandle = (
   const size = 8 / zoom;
   const half = size / 2;
   
-  ctx.fillStyle = "#fff"; 
-  ctx.strokeStyle = "#3b82f6"; 
-  ctx.lineWidth = 1.5 / zoom;
-  
   if (handle === "start-point" || handle === "end-point") {
+    ctx.fillStyle = "#fff"; 
+    ctx.strokeStyle = "#3b82f6"; 
+    ctx.lineWidth = 1.5 / zoom;
     ctx.beginPath(); 
     ctx.arc(x, y, half + 1, 0, Math.PI * 2); 
     ctx.fill(); 
     ctx.stroke();
+  } else if (
+    handle === "top-center" || 
+    handle === "bottom-center" || 
+    handle === "middle-left" || 
+    handle === "middle-right"
+  ) {
+    // Styled as connection anchor port (blue circle with white border)
+    ctx.fillStyle = "#3b82f6";
+    ctx.strokeStyle = "#ffffff"; 
+    ctx.lineWidth = 1.2 / zoom;
+    ctx.beginPath(); 
+    ctx.arc(x, y, half + 1.2, 0, Math.PI * 2); 
+    ctx.fill(); 
+    ctx.stroke();
   } else {
+    // Corner resize handles (white square with blue border)
+    ctx.fillStyle = "#fff"; 
+    ctx.strokeStyle = "#3b82f6"; 
+    ctx.lineWidth = 1.5 / zoom;
     ctx.fillRect(x - half, y - half, size, size); 
     ctx.strokeRect(x - half, y - half, size, size);
   }
@@ -720,6 +930,9 @@ export const renderElement = (
       break;
     case "diamond": 
       drawDiamond(ctx, x, y, w, h, el, defaultTextStyle); 
+      break;
+    case "cylinder": 
+      drawCylinder(ctx, x, y, w, h, el, defaultTextStyle); 
       break;
     case "arrow": 
       drawArrow(ctx, el, defaultTextStyle); 

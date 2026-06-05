@@ -6,15 +6,25 @@ dotenv.config();
 
 const { Pool } = pg;
 
-const cockroachlabcert = Your_Certificate;
-
+let cockroachlabcert = '';
+try {
+  if (fs.existsSync('root.crt')) {
+    cockroachlabcert = fs.readFileSync('root.crt').toString();
+  } else if (fs.existsSync('/app/root.crt')) {
+    cockroachlabcert = fs.readFileSync('/app/root.crt').toString();
+  } else if (fs.existsSync('server/root.crt')) {
+    cockroachlabcert = fs.readFileSync('server/root.crt').toString();
+  }
+} catch (err) {
+  console.error('Warning: Failed to load database root certificate:', err.message);
+}
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
+  ssl: cockroachlabcert ? {
     rejectUnauthorized: true,
-    ca: cockroachlabcert || fs.readFileSync("/app/root.crt").toString(),
-  },
+    ca: cockroachlabcert,
+  } : undefined,
   max: 20,
   idleTimeoutMillis: 80000,
   connectionTimeoutMillis: 10000,
