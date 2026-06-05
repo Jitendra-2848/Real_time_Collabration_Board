@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Element } from "../lib/types";
 
 export const useHistory = (initialElements: Element[]) => {

@@ -1,5 +1,4 @@
-import type { Element, Point } from "../lib/types";
-import { getElementBounds } from "../lib/utils";
+import type { Element } from "../lib/types";
 
 export const exportCanvasToPNG = (canvas: HTMLCanvasElement) => {
   const url = canvas.toDataURL("image/png");

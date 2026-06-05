@@ -1,20 +1,23 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
-
+import fs from 'fs';
+import { Certificate } from 'crypto';
 dotenv.config();
 
 const { Pool } = pg;
 
+const cockroachlabcert = Your_Certificate;
+
+
 export const pool = new Pool({
-//   user: process.env.PG_USER || 'postgres',
-//   host: process.env.PG_HOST || 'localhost',
-//   database: process.env.PG_DATABASE || 's2',
-//   password: process.env.PG_PASSWORD || 'postgres',
-//   port: Number(process.env.PG_PORT || 5432),
-  connectionString:process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: true,
+    ca: cockroachlabcert || fs.readFileSync("/app/root.crt").toString(),
+  },
   max: 20,
   idleTimeoutMillis: 80000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('connect', () => {
@@ -33,28 +36,28 @@ await pool.query(`
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
   );
 
-  CREATE TABLE IF NOT EXISTS rooms (
-    id SERIAL PRIMARY KEY,
+ CREATE TABLE IF NOT EXISTS rooms (
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     access_mode TEXT NOT NULL DEFAULT 'open',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-  );
+);
 
-  CREATE TABLE IF NOT EXISTS room_states (
-    room_id INTEGER PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
-    state JSONB NOT NULL DEFAULT '[]',
+CREATE TABLE IF NOT EXISTS room_states (
+    room_id TEXT PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
+    state JSONB NOT NULL DEFAULT '[]'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-  );
+);
 
-  CREATE TABLE IF NOT EXISTS chat_messages (
+CREATE TABLE IF NOT EXISTS chat_messages (
     id BIGSERIAL PRIMARY KEY,
-    room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     username TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-  );
+);
 `);
 
 export async function createUser(username, passwordHash) {
@@ -81,10 +84,10 @@ export async function findUserById(id) {
   return result.rows[0] || null;
 }
 
-export async function createRoom(name, createdBy, accessMode = 'open') {
+export async function createRoom(uuid, name, createdBy, accessMode = 'open') {
   const result = await pool.query(
-    `INSERT INTO rooms (name, created_by, access_mode) VALUES ($1, $2, $3) RETURNING id, name, created_by, access_mode`,
-    [name, createdBy, accessMode]
+    `INSERT INTO rooms (id,name, created_by, access_mode) VALUES ($1, $2, $3,$4) RETURNING id, name, created_by, access_mode`,
+    [uuid, name, createdBy, accessMode]
   );
   return result.rows[0];
 }
@@ -99,9 +102,23 @@ export async function listRooms() {
   return result.rows;
 }
 
+export async function listRoomsForUser(userId) {
+  // Return rooms where user is owner OR has participated (has messages in room)
+  const result = await pool.query(
+    `SELECT DISTINCT rooms.id, rooms.name, rooms.created_at, rooms.access_mode, users.username as created_by
+     FROM rooms
+     JOIN users ON rooms.created_by = users.id
+     LEFT JOIN chat_messages ON chat_messages.room_id = rooms.id AND chat_messages.user_id = $1
+     WHERE rooms.created_by = $1 OR chat_messages.user_id = $1
+     ORDER BY rooms.created_at DESC`,
+    [userId]
+  );
+  return result.rows;
+}
+
 export async function findRoomById(id) {
   const result = await pool.query(
-    `SELECT rooms.id, rooms.name, rooms.created_by, rooms.access_mode, rooms.created_at, users.username as created_by
+    `SELECT rooms.id, rooms.name, rooms.created_by, rooms.access_mode, rooms.created_at, users.username as created_by_username
      FROM rooms
      JOIN users ON rooms.created_by = users.id
      WHERE rooms.id = $1 LIMIT 1`,

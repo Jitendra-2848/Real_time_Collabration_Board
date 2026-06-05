@@ -11,8 +11,6 @@ export const findClosestAnchor = (
   const bounds = getElementBounds(el);
   const cx = bounds.x + bounds.width / 2;
   const cy = bounds.y + bounds.height / 2;
-  const halfW = bounds.width / 2;
-  const halfH = bounds.height / 2;
 
   const candidates: { position: Anchor["position"]; x: number; y: number }[] = [
     { position: "top", x: cx, y: bounds.y },
@@ -71,7 +69,7 @@ export const findClosestAnchor = (
 export const createAutoConnector = (
   sourceEl: Element,
   targetEl: Element,
-  existingConnectors: Connector[],
+  _existingConnectors: Connector[],
   options?: {
     label?: string;
     labelStyle?: TextStyle;

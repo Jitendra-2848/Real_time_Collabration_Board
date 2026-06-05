@@ -53,7 +53,7 @@ export async function createRoom(token: string, name: string, access_mode?: stri
   return handleResponse(response);
 }
 
-export async function fetchRoomMessages(token: string, roomId: number) {
+export async function fetchRoomMessages(token: string, roomId: string | number) {
   const response = await fetch(`${API_URL}/rooms/${roomId}/messages`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -62,7 +62,7 @@ export async function fetchRoomMessages(token: string, roomId: number) {
   return handleResponse(response);
 }
 
-export async function fetchRoomById(token: string, roomId: number) {
+export async function fetchRoomById(token: string, roomId: string | number) {
   const response = await fetch(`${API_URL}/rooms/${roomId}`, {
     headers: {
       Authorization: `Bearer ${token}`,

@@ -344,7 +344,7 @@ const drawText = (
   w: number, 
   h: number, 
   el: Element, 
-  zoom: number, 
+  _zoom: number, 
   defaultTextStyle: TextStyle = "rough"
 ) => {
   const targetWidth = Math.max(w, 100);
@@ -448,8 +448,8 @@ export const renderConnector = (
   sourceEl: Element,
   targetEl: Element,
   connector: Connector,
-  zoom: number = 1,
-  defaultTextStyle: TextStyle = "rough"
+  _zoom: number = 1,
+  _defaultTextStyle: TextStyle = "rough"
 ) => {
   ctx.save();
   
@@ -566,7 +566,7 @@ export const renderConnector = (
 
 const getReshapeHandles = (
   el: Element, 
-  zoom: number
+  _zoom: number
 ): { handle: ReshapeHandle; x: number; y: number }[] => {
   if (el.tool === "pen" && el.points && el.points.length > 0) {
     return [

@@ -1,18 +1,16 @@
 import React, { useRef } from "react";
-import { Undo, Redo, Download, Trash2, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, Unlock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn, Type } from "lucide-react";
+import { Undo, Redo, Download, AlignStartVertical, AlignEndVertical, AlignCenter, Group, Ungroup, Lock, ArrowUp, ArrowDown, Fullscreen, FileImage, FileUp, MessageSquare, Layers, SlidersHorizontal, Layout, Monitor, ZoomIn, Type } from "lucide-react";
 
 interface Props {
-  onUndo: () => void; onRedo: () => void; onClear: () => void; onExport: () => void;
+  onUndo: () => void; onRedo: () => void; onExport: () => void;
   canUndo: boolean; canRedo: boolean;
   // Alignment
   onAlignLeft?: () => void; onAlignCenter?: () => void; onAlignRight?: () => void;
   onAlignTop?: () => void; onAlignMiddle?: () => void; onAlignBottom?: () => void;
-  onDistributeH?: () => void; onDistributeV?: () => void;
   // Group
   onGroup?: () => void; onUngroup?: () => void;
   // Z-order
   onBringToFront?: () => void; onSendToBack?: () => void;
-  onBringForward?: () => void; onSendBackward?: () => void;
   // Lock
   onToggleLock?: () => void;
   // Export variants
@@ -32,10 +30,10 @@ interface Props {
   onCycleTextStyle?: () => void;
 }
 
-export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onClear, onExport, canUndo, canRedo,
+export const TopBar: React.FC<Props> = ({ onUndo, onRedo, onExport, canUndo, canRedo,
   onAlignLeft, onAlignCenter, onAlignRight, onAlignTop, onAlignMiddle, onAlignBottom,
-  onDistributeH, onDistributeV, onGroup, onUngroup,
-  onBringToFront, onSendToBack, onBringForward, onSendBackward,
+  onGroup, onUngroup,
+  onBringToFront, onSendToBack,
   onToggleLock, onExportSVG, onExportPDF,
   hasSelection, hasMultiSelection, onImportImage, onZoomToFit, onFullscreen,
   onToggleComments, onToggleLayers, onToggleProperties, onToggleTemplates, onPresentation,

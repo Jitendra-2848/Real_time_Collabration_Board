@@ -7,6 +7,13 @@ import { IconLibrary } from "./components/IconLibrary";
 import { AuthPage } from "./components/AuthPage";
 import { RoomsPage } from "./components/RoomsPage";
 import { Minimap } from "./components/Minimap";
+import { RoomInfo } from "./components/RoomInfo";
+import { RealtimeStatus } from "./components/RealtimeStatus";
+import { BoardTabs } from "./components/BoardTabs";
+import { ChatPanel } from "./components/ChatPanel";
+import { PropertiesPanel } from "./components/PropertiesPanel";
+import { LayersPanel } from "./components/LayersPanel";
+import { ZoomControls } from "./components/ZoomControls";
 import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
@@ -78,7 +85,7 @@ export const App = () => {
   // Auth & Rooms
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: number; username: string } | null>(null);
-  const [currentRoom, setCurrentRoom] = useState<{ id: number; name: string } | null>(null);
+  const [currentRoom, setCurrentRoom] = useState<{ id: string | number; name: string } | null>(null);
 
   // Socket
   const defaultSocketUrl = typeof window !== "undefined"
@@ -172,7 +179,7 @@ export const App = () => {
     setUser(null); setAuthToken(null); setCurrentRoom(null);
     localStorage.removeItem("collab-auth"); localStorage.removeItem("collab-room");
   };
-  const handleJoinRoom = (roomId: number, roomName: string) => {
+  const handleJoinRoom = (roomId: string | number, roomName: string) => {
     setCurrentRoom({ id: roomId, name: roomName });
     localStorage.setItem("collab-room", JSON.stringify({ id: roomId, name: roomName }));
   };
@@ -262,7 +269,7 @@ export const App = () => {
   useEffect(() => {
     const handleKeyDownEvent = (e: KeyboardEvent) => {
       if (editingElementId) return;
-      const action = handleKeyDown(e, elements, historyIndex, ui.presentationMode);
+      const action = handleKeyDown(e, ui.presentationMode);
       if (!action) return;
       switch (action.action) {
         case "undo": undo(); break;
@@ -332,8 +339,6 @@ export const App = () => {
 
   const bringToFront = () => pushToHistoryWithSync(AlignmentService.bringToFront(elements));
   const sendToBack = () => pushToHistoryWithSync(AlignmentService.sendToBack(elements));
-  const bringForward = () => pushToHistoryWithSync(AlignmentService.bringForward(elements));
-  const sendBackward = () => pushToHistoryWithSync(AlignmentService.sendBackward(elements));
   const toggleLock = () => pushToHistoryWithSync(SelectionService.toggleLock(elements));
   const alignSelected = (dir: any) => pushToHistoryWithSync(AlignmentService.alignSelected(elements, dir));
   const groupSelected = () => {
@@ -926,149 +931,146 @@ export const App = () => {
     <div className="h-screen w-screen bg-gray-50 overflow-hidden relative select-none" style={{ touchAction: "none" }}>
       
       {/* Room Info */}
-      <div className="fixed top-8 right-4 z-[100] flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur-md text-sm">
-        <div className="font-semibold">Room: {currentRoom?.name || 'None'}</div>
-        <div className="text-slate-600">Logged in as {user?.username}</div>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="text-xs text-slate-600">{socketConnected ? `Connected (${peerCount} peer${peerCount !== 1 ? 's' : ''})` : 'Disconnected'}</span>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => { setCurrentRoom(null); localStorage.removeItem("collab-room"); }}
-            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100">Leave room</button>
-          <button onClick={handleLogout}
-            className="rounded-2xl border border-slate-300 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100">Logout</button>
-        </div>
-      </div>
+      <RoomInfo
+        currentRoom={currentRoom}
+        username={user?.username || ""}
+        socketConnected={socketConnected}
+        peerCount={peerCount}
+        onLeaveRoom={() => {
+          setCurrentRoom(null);
+          localStorage.removeItem("collab-room");
+        }}
+        onLogout={handleLogout}
+      />
 
-      {/* Board tabs */}
-      <div className="fixed top-0 left-0 right-0 h-8 bg-gray-100 flex items-center gap-1 px-4 z-[100] overflow-x-auto">
-        {boards.map(board => (
-          <button key={board.id} onClick={() => { pushToHistoryWithSync(elements); setActiveBoardId(board.id); }}
-            className={`px-3 py-0.5 text-xs rounded-t ${board.id === activeBoardId ? "bg-white font-semibold" : "hover:bg-gray-200"}`}>
-            {board.name}
-          </button>
-        ))}
-        <button onClick={() => { const id = uuid(); setBoards([...boards, { id, name: `Board ${boards.length + 1}`, elements: [] }]); setActiveBoardId(id); }}
-          className="px-2 text-xs hover:bg-gray-200 rounded">+</button>
-      </div>
+      {/* Board Tabs */}
+      <BoardTabs
+        boards={boards}
+        activeBoardId={activeBoardId}
+        onSelectBoard={(id) => {
+          pushToHistoryWithSync(elements);
+          setActiveBoardId(id);
+        }}
+        onAddBoard={() => {
+          const id = uuid();
+          setBoards([...boards, { id, name: `Board ${boards.length + 1}`, elements: [] }]);
+          setActiveBoardId(id);
+        }}
+      />
 
+      {/* Top Controls Bar */}
       <TopBar
-        onUndo={undo} onRedo={redo} onClear={() => pushToHistoryWithSync([])} onExport={exportCanvas}
-        canUndo={canUndo} canRedo={canRedo}
-        onAlignLeft={() => alignSelected("left")} onAlignCenter={() => alignSelected("center")} onAlignRight={() => alignSelected("right")}
-        onAlignTop={() => alignSelected("top")} onAlignMiddle={() => alignSelected("middle")} onAlignBottom={() => alignSelected("bottom")}
-        onDistributeH={() => alignSelected("distribute-h")} onDistributeV={() => alignSelected("distribute-v")}
-        onGroup={groupSelected} onUngroup={ungroupSelected}
-        onBringToFront={bringToFront} onSendToBack={sendToBack} onBringForward={bringForward} onSendBackward={sendBackward}
-        onToggleLock={toggleLock} onExportSVG={exportSVG} onExportPDF={exportPDF}
-        hasSelection={selCount > 0} hasMultiSelection={selCount > 1}
-        onImportImage={handleImportImage} onZoomToFit={zoomToFit}
+        onUndo={undo}
+        onRedo={redo}
+        onExport={exportCanvas}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onAlignLeft={() => alignSelected("left")}
+        onAlignCenter={() => alignSelected("center")}
+        onAlignRight={() => alignSelected("right")}
+        onAlignTop={() => alignSelected("top")}
+        onAlignMiddle={() => alignSelected("middle")}
+        onAlignBottom={() => alignSelected("bottom")}
+        onGroup={groupSelected}
+        onUngroup={ungroupSelected}
+        onBringToFront={bringToFront}
+        onSendToBack={sendToBack}
+        onToggleLock={toggleLock}
+        onExportSVG={exportSVG}
+        onExportPDF={exportPDF}
+        hasSelection={selCount > 0}
+        hasMultiSelection={selCount > 1}
+        onImportImage={handleImportImage}
+        onZoomToFit={zoomToFit}
         onFullscreen={() => document.documentElement.requestFullscreen()}
         onToggleComments={() => ui.setCommentsPanelOpen(!ui.commentsPanelOpen)}
         onToggleLayers={() => ui.setLayersPanelOpen(!ui.layersPanelOpen)}
         onToggleProperties={() => ui.setPropertiesPanelOpen(!ui.propertiesPanelOpen)}
         onToggleTemplates={() => ui.setTemplatesOpen(!ui.templatesOpen)}
-        onPresentation={() => { ui.setPresentationMode(true); ui.setPresentationIndex(-1); document.documentElement.requestFullscreen(); }}
-        historyIndex={historyIndex} historyLength={history.length} onCycleTextStyle={cycleTextStyle}
+        onPresentation={() => {
+          ui.setPresentationMode(true);
+          ui.setPresentationIndex(-1);
+          document.documentElement.requestFullscreen();
+        }}
+        historyIndex={historyIndex}
+        historyLength={history.length}
+        onCycleTextStyle={cycleTextStyle}
       />
 
-      {/* Chat panel */}
+      {/* Chat Panel */}
       {ui.commentsPanelOpen && (
-        <div className="fixed right-4 top-20 z-[60] w-80 h-[60vh] bg-white shadow-xl rounded-2xl border p-3 overflow-y-auto flex flex-col">
-          <h3 className="font-semibold mb-2">Room chat</h3>
-          <div className="space-y-2 text-sm mb-2 flex-1 overflow-y-auto">
-            {(!messages || messages.length === 0) && <div className="text-gray-400">No messages yet.</div>}
-            {messages.map(m => (
-              <div key={m.id || m.created_at} className="border-b pb-2">
-                <div className="text-xs text-gray-500">{m.username} <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleTimeString()}</span></div>
-                <div className="text-sm">{m.message}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-auto">
-            <ChatInput onSend={(text) => { 
-              if (text.trim()) { 
-                sendChat(text.trim()); 
-                setMessages(prev => [...prev, { 
-                  id: `local-${Date.now()}`, 
-                  username: user?.username || 'me', 
-                  message: text.trim(), 
-                  created_at: new Date().toISOString() 
-                }]); 
-              } 
-            }} />
-          </div>
-        </div>
+        <ChatPanel
+          messages={messages}
+          onSendMessage={(text) => {
+            sendChat(text);
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `local-${Date.now()}`,
+                username: user?.username || "me",
+                message: text,
+                created_at: new Date().toISOString()
+              }
+            ]);
+          }}
+          username={user?.username || ""}
+        />
       )}
 
-      {/* Connection status */}
-      <div className="fixed left-4 top-20 z-40 pointer-events-none rounded-2xl border bg-white/95 px-4 py-2 text-xs shadow-lg backdrop-blur-md">
-        <div className="font-semibold">Realtime status</div>
-        <div className="mt-1">Connected: <span className={`font-bold ${socketConnected ? "text-green-700" : "text-red-700"}`}>{socketConnected ? "Yes" : "No"}</span></div>
-        <div>Peers: <span className="font-semibold">{peerCount}</span></div>
-        <div className="text-gray-500">Server: {SOCKET_URL}</div>
-      </div>
+      {/* Realtime Status Indicator */}
+      <RealtimeStatus
+        socketConnected={socketConnected}
+        peerCount={peerCount}
+        SOCKET_URL={SOCKET_URL}
+      />
 
+      {/* Tools Sidebar */}
       <ToolSidebar
-        selectedTool={ui.selectedTool} setSelectedTool={ui.setSelectedTool}
-        strokeColor={drawingStyle.strokeColor} fillColor={drawingStyle.fillColor}
-        onStrokeColorChange={drawingStyle.setStrokeColor} onFillColorChange={drawingStyle.setFillColor}
-        strokeWidth={drawingStyle.strokeWidth} onStrokeWidthChange={drawingStyle.setStrokeWidth}
-        opacity={drawingStyle.opacity} onOpacityChange={drawingStyle.setOpacity}
-        lineStyle={drawingStyle.lineStyle} onLineStyleChange={drawingStyle.setLineStyle}
-        arrowStyle={drawingStyle.arrowStyle} onArrowStyleChange={drawingStyle.setArrowStyle}
-        eraserSize={drawingStyle.eraserSize} onEraserSizeChange={drawingStyle.setEraserSize}
-        presetColors={drawingStyle.presetColors} recentColors={drawingStyle.recentColors}
+        selectedTool={ui.selectedTool}
+        setSelectedTool={ui.setSelectedTool}
+        strokeColor={drawingStyle.strokeColor}
+        fillColor={drawingStyle.fillColor}
+        onStrokeColorChange={drawingStyle.setStrokeColor}
+        onFillColorChange={drawingStyle.setFillColor}
+        strokeWidth={drawingStyle.strokeWidth}
+        onStrokeWidthChange={drawingStyle.setStrokeWidth}
+        opacity={drawingStyle.opacity}
+        onOpacityChange={drawingStyle.setOpacity}
+        lineStyle={drawingStyle.lineStyle}
+        onLineStyleChange={drawingStyle.setLineStyle}
+        arrowStyle={drawingStyle.arrowStyle}
+        onArrowStyleChange={drawingStyle.setArrowStyle}
+        eraserSize={drawingStyle.eraserSize}
+        onEraserSizeChange={drawingStyle.setEraserSize}
+        presetColors={drawingStyle.presetColors}
+        recentColors={drawingStyle.recentColors}
         onOpenLibrary={() => ui.setLibraryOpen(!ui.isLibraryOpen)}
-        onAddGuide={addGuide} canvasRef={canvasRef} pan={pan} zoom={zoom}
+        onAddGuide={addGuide}
+        canvasRef={canvasRef}
+        pan={pan}
+        zoom={zoom}
       />
 
       {/* Properties panel */}
       {ui.propertiesPanelOpen && getSelected() && (
-        <div className="fixed right-4 top-20 z-[55] bg-white shadow-xl rounded-2xl border p-4 w-56 max-h-[70vh] overflow-y-auto">
-          <h3 className="font-bold text-sm mb-3">Properties</h3>
-          {(() => {
-            const el = getSelected();
-            if (!el) return null;
-            return (
-              <div className="space-y-2 text-xs">
-                <div>Type: <span className="font-mono">{el.tool}</span></div>
-                <div className="flex gap-2"><span>X:</span><input type="number" value={Math.round(el.x)} onChange={e => updateElements(el.id, { x: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
-                <div className="flex gap-2"><span>Y:</span><input type="number" value={Math.round(el.y)} onChange={e => updateElements(el.id, { y: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
-                <div className="flex gap-2"><span>W:</span><input type="number" value={Math.round(el.width)} onChange={e => updateElements(el.id, { width: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
-                <div className="flex gap-2"><span>H:</span><input type="number" value={Math.round(el.height)} onChange={e => updateElements(el.id, { height: Number(e.target.value) })} className="w-16 border rounded px-1" /></div>
-                <div><label>Color</label><input type="color" value={el.color} onChange={e => updateElements(el.id, { color: e.target.value })} className="w-full" /></div>
-                <div><label>Opacity ({Math.round((el.opacity ?? 1) * 100)}%)</label><input type="range" min={0} max={100} value={(el.opacity ?? 1) * 100} onChange={e => updateElements(el.id, { opacity: Number(e.target.value) / 100 })} className="w-full" /></div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Text Style</label>
-                  <select value={el.textStyle || defaultTextStyle} onChange={e => updateElements(el.id, { textStyle: e.target.value as TextStyle })} className="w-full border rounded px-2 py-1 text-xs">
-                    <option value="rough">Rough (default)</option>
-                    <option value="clean">Clean</option>
-                    <option value="mono">Mono</option>
-                  </select>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
+        <PropertiesPanel
+          selectedElement={getSelected()}
+          onUpdateElement={updateElements}
+          defaultTextStyle={defaultTextStyle}
+        />
       )}
 
       {/* Layers panel */}
       {ui.layersPanelOpen && (
-        <div className="fixed right-4 top-20 z-[50] bg-white shadow-xl rounded-2xl border p-4 w-56 max-h-96 overflow-y-auto">
-          <h3 className="font-bold text-sm mb-3">Layers</h3>
-          {[...elements].reverse().map((el, i) => (
-            <div key={el.id} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs ${el.isSelected ? "bg-blue-100" : "hover:bg-gray-50"}`}
-              onClick={() => setElements(elements.map(ee => ({ ...ee, isSelected: ee.id === el.id })))}>
-              <span className="text-gray-400 w-4">{elements.length - i}</span>
-              <span className="flex-1 truncate">{el.tool}{el.text ? `: ${el.text.slice(0, 15)}` : ""}</span>
-              <button onClick={e => { e.stopPropagation(); toggleLock(); }} className="text-gray-400 hover:text-gray-700">{el.locked ? "🔒" : "🔓"}</button>
-              <button onClick={e => { e.stopPropagation(); setConnectors(prev => prev.filter(c => c.sourceId !== el.id && c.targetId !== el.id)); pushToHistoryWithSync(elements.filter(ee => ee.id !== el.id)); }}
-                className="text-red-400 hover:text-red-600">✕</button>
-            </div>
-          ))}
-        </div>
+        <LayersPanel
+          elements={elements}
+          onSelectLayer={(id) => setElements(elements.map(ee => ({ ...ee, isSelected: ee.id === id })))}
+          onToggleLock={toggleLock}
+          onDeleteLayer={(id) => {
+            setConnectors(prev => prev.filter(c => c.sourceId !== id && c.targetId !== id));
+            pushToHistoryWithSync(elements.filter(ee => ee.id !== id));
+          }}
+        />
       )}
 
       {/* Templates modal */}
@@ -1098,15 +1100,16 @@ export const App = () => {
       )}
 
       {/* Zoom controls */}
-      <div className="fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-xl border bg-white p-3 shadow-lg">
-        <button onClick={() => setZoom(z => Math.min(z * 1.2, 4))} className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold">+</button>
-        <span className="font-mono text-xs w-12 text-center">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.max(z / 1.2, 0.1))} className="rounded px-2 py-1 hover:bg-gray-100 text-sm font-bold">−</button>
-        <div className="w-px h-4 bg-gray-200" />
-        <button onClick={() => ui.setShowGrid(!ui.showGrid)} className={`rounded px-2 py-1 text-xs ${ui.showGrid ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100"}`}>Grid</button>
-        <button onClick={zoomToFit} className="rounded px-2 py-1 hover:bg-gray-100 text-xs" title="Fit to screen">⊞</button>
-        <button onClick={() => ui.setShowMinimap(!ui.showMinimap)} className={`rounded px-2 py-1 text-xs ${ui.showMinimap ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100"}`}>Map</button>
-      </div>
+      <ZoomControls
+        zoom={zoom}
+        onZoomIn={() => setZoom(z => Math.min(z * 1.2, 4))}
+        onZoomOut={() => setZoom(z => Math.max(z / 1.2, 0.1))}
+        showGrid={ui.showGrid}
+        onToggleGrid={() => ui.setShowGrid(!ui.showGrid)}
+        onZoomToFit={zoomToFit}
+        showMinimap={ui.showMinimap}
+        onToggleMinimap={() => ui.setShowMinimap(!ui.showMinimap)}
+      />
 
       {/* Minimap (moved to component to avoid wasteful inline draws) */}
       {ui.showMinimap && (
@@ -1190,16 +1193,6 @@ export const App = () => {
           cursor={getCursor()}
         />
       </div>
-    </div>
-  );
-};
-
-const ChatInput: React.FC<{ onSend: (text: string) => void }> = ({ onSend }) => {
-  const [text, setText] = useState('');
-  return (
-    <div className="flex gap-2">
-      <input value={text} onChange={e => setText(e.target.value)} className="flex-1 rounded-2xl border px-3 py-2" placeholder="Write a message" onKeyDown={e => { if (e.key === 'Enter') { onSend(text); setText(''); } }} />
-      <button onClick={() => { if (text.trim()) { onSend(text); setText(''); } }} className="rounded-2xl bg-slate-900 text-white px-3 py-2">Send</button>
     </div>
   );
 };

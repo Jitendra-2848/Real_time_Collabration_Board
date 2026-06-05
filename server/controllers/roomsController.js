@@ -1,10 +1,10 @@
-import { createRoom as createRoomDb, listRooms as listRoomsDb, findRoomById, fetchMessages } from '../lib/db.js';
-
+import { createRoom as createRoomDb, listRooms as listRoomsDb, listRoomsForUser, findRoomById, fetchMessages } from '../lib/db.js';
+import { v4 as uuidv4 } from 'uuid';
 export async function listRooms(req, res) {
   try {
     console.log(`[Rooms] listRooms called by user:`, req.user);
-    const rooms = await listRoomsDb();
-    console.log(`[Rooms] Found ${rooms.length} rooms`);
+    const rooms = await listRoomsForUser(req.user.id);
+    console.log(`[Rooms] Found ${rooms.length} rooms for user ${req.user.id}`);
     res.json({ rooms });
   } catch (err) {
     console.error('[Rooms] listRooms error:', err.message || err);
@@ -37,8 +37,8 @@ export async function createRoom(req, res) {
     const userId = req.user.id;
     const mode = access_mode || 'open';
     console.log(`[Rooms] Creating room: name="${normalized}", userId=${userId}, access_mode="${mode}"`);
-
-    const room = await createRoomDb(normalized, userId, mode);
+    const roomId = uuidv4(); // Generate a unique UUID for the room
+    const room = await createRoomDb(roomId,normalized, userId, mode);
     console.log(`[Rooms] Room created successfully:`, room);
 
     if (!room || !room.id) {
@@ -48,7 +48,7 @@ export async function createRoom(req, res) {
 
     res.status(201).json({ room });
   } catch (err) {
-    console.error('[Rooms] createRoom error:', err.message || err);
+    console.error('[Rooms] createRoom error:', err);
     if (err.code === '23505') {
       // PostgreSQL unique constraint violation
       return res.status(409).json({ error: 'A room with this name already exists.' });

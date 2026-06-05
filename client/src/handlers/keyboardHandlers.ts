@@ -1,5 +1,4 @@
 import { KEY_TO_TOOL } from "../constants/tools";
-import type { Element } from "../lib/types";
 
 export interface KeyboardAction {
   action: string;
@@ -8,8 +7,6 @@ export interface KeyboardAction {
 
 export const handleKeyDown = (
   e: KeyboardEvent,
-  elements: Element[],
-  historyIndex: number,
   presentationMode: boolean
 ): KeyboardAction | null => {
   // Don't process if typing in an input

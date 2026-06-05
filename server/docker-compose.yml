@@ -1,15 +1,14 @@
 version: "3.8"
 
 services:
+
   nginx:
     image: nginx:1.25-alpine
     container_name: nginx
     ports:
       - "8000:80"
-
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-
     depends_on:
       - app
       - app1
@@ -19,68 +18,83 @@ services:
       - app5
       - app6
       - app7
+    restart: always
+
   app:
-    image: jitendra2848/whiteboard:latest
-    container_name: app
+    build: .
+    image: local-whiteboard:latest
     environment:
       - INSTANCE_ID=1
-
     env_file:
       - .env
+    restart: always
+
   app1:
-    image: jitendra2848/whiteboard:latest
-    container_name: app1
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=2
-
     env_file:
       - .env
+    restart: always
+
   app2:
-    image: jitendra2848/whiteboard:latest
-    container_name: app2
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=3
-
     env_file:
       - .env
+    restart: always
+
   app3:
-    image: jitendra2848/whiteboard:latest
-    container_name: app3
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=4
-
     env_file:
       - .env
+    restart: always
+
   app4:
-    image: jitendra2848/whiteboard:latest
-    container_name: app4
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=5
-
     env_file:
       - .env
+    restart: always
+
   app5:
-    image: jitendra2848/whiteboard:latest
-    container_name: app5
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=6
-
     env_file:
       - .env
+    restart: always
+
   app6:
-    image: jitendra2848/whiteboard:latest
-    container_name: app6
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=7
-
     env_file:
       - .env
+    restart: always
+
   app7:
-    image: jitendra2848/whiteboard:latest
-    container_name: app7
+    image: local-whiteboard:latest
+    depends_on:
+      - app
     environment:
       - INSTANCE_ID=8
-
     env_file:
       - .env
- 
+    restart: always

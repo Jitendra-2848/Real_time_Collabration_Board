@@ -26,14 +26,14 @@ const TECH_ICONS = [
   { name: "TypeScript", icon: Si.SiTypescript, color: "#3178C6" },
   { name: "JavaScript", icon: Si.SiJavascript, color: "#F7DF1E" },
   { name: "HTML5", icon: Si.SiHtml5, color: "#E34F26" },
-  { name: "CSS3", icon: Si.SiCss3, color: "#1572B6" },
+  { name: "CSS3", icon: Si.SiCss, color: "#1572B6" },
   { name: "Git", icon: Si.SiGit, color: "#F05032" },
-  { name: "VS Code", icon: Si.SiVisualstudiocode, color: "#0078D7" },
+  { name: "VS Code", icon: Si.SiVscodium, color: "#0078D7" },
   { name: "Figma", icon: Si.SiFigma, color: "#F24E1E" },
   { name: "Tailwind", icon: Si.SiTailwindcss, color: "#38B2AC" },
-  { name: "AWS", icon: Si.SiAmazonaws, color: "#FF9900" },
+  { name: "Cloudflare", icon: Si.SiCloudflare, color: "#F38020" },
   { name: "Linux", icon: Si.SiLinux, color: "#FCC624" },
-  { name: "Azure", icon: Si.SiMicrosoftazure, color: "#0089D6" },
+  { name: "Google Cloud", icon: Si.SiGooglecloud, color: "#4285F4" },
 ];
 
 // Extract raw SVG path strings from react-icons
