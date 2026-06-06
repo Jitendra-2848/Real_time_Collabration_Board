@@ -124,9 +124,8 @@ Process B > End: Complete task B
   };
 
   return (
-    <div className="fixed top-24 right-4 z-30 w-[420px] max-h-[calc(100vh-140px)] flex flex-col rounded-3xl border border-slate-200/80 bg-white/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-300">
+    <div className="fixed sm:top-24 sm:right-4 right-0 bottom-0 sm:bottom-auto w-full sm:w-[420px] max-h-[50vh] sm:max-h-[calc(100vh-140px)] z-30 flex flex-col rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200/80 bg-white/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-300">
       
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-gradient-to-r from-slate-50/50 to-white/50">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -147,7 +146,6 @@ Process B > End: Complete task B
         </button>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-slate-100 px-6 py-2 bg-slate-50/30 gap-4">
         <button
           onClick={() => setActiveTab("editor")}
@@ -175,7 +173,6 @@ Process B > End: Complete task B
 
       {activeTab === "editor" ? (
         <div className="flex flex-col flex-1 p-5 overflow-hidden">
-          {/* Templates list */}
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Templates:</span>
             <button
@@ -198,7 +195,6 @@ Process B > End: Complete task B
             </button>
           </div>
 
-          {/* Text Area */}
           <div className="flex-1 min-h-[200px] border border-slate-200 rounded-2xl overflow-hidden focus-within:border-indigo-400 transition-colors shadow-inner bg-slate-50/50">
             <textarea
               value={code}
@@ -208,7 +204,6 @@ Process B > End: Complete task B
             />
           </div>
 
-          {/* Action button */}
           <button
             onClick={handleGenerate}
             className="mt-4 flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-2xl font-bold text-xs shadow-lg shadow-indigo-100 hover:shadow-indigo-200/50 active:scale-[0.98] transition-all"

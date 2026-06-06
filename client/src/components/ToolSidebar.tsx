@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import {
   MousePointer, Hand, Pencil, Square, Circle,
   Minus, ArrowUpRight, Type, Eraser, Box, Diamond,
-  ChevronLeft, ChevronRight, MessageSquare, Settings,
-  Palette, Sliders
+  ChevronLeft, ChevronRight, MessageSquare,
+  Palette
 } from "lucide-react";
 import type { Tool, Point } from "../lib/types";
 
@@ -36,7 +36,7 @@ interface Props {
 const ColorPreset = ({ color, isSelected, onClick }: { color: string; isSelected?: boolean; onClick: () => void }) => (
   <button
     onClick={onClick}
-    className={`w-8 h-8 rounded-lg border-2 transition-all hover:scale-110 ${isSelected ? "border-blue-500 shadow-lg scale-110" : "border-gray-200 hover:border-gray-300"
+    className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg border-2 transition-all hover:scale-110 ${isSelected ? "border-blue-500 shadow-lg scale-110" : "border-gray-200 hover:border-gray-300"
       }`}
     style={{ backgroundColor: color }}
     title={color}
@@ -47,13 +47,13 @@ const ToolButton = ({ icon, label, selected, onClick }: { icon: React.ReactNode;
   <button
     onClick={onClick}
     title={label}
-    className={`relative p-3 rounded-xl transition-all duration-200 flex items-center justify-center group ${selected
+    className={`relative p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center group ${selected
         ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30"
         : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
       }`}
   >
     {icon}
-    <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+    <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none hidden sm:block">
       {label}
     </span>
   </button>
@@ -84,60 +84,56 @@ export const ToolSidebar: React.FC<Props> = ({
   const [expandedSection, setExpandedSection] = useState<"style" | null>(null);
 
   const mainTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "select", icon: <MousePointer size={22} />, label: "Select (V)" },
-    { id: "hand", icon: <Hand size={22} />, label: "Pan (H)" },
+    { id: "select", icon: <MousePointer size={18} />, label: "Select (V)" },
+    { id: "hand", icon: <Hand size={18} />, label: "Pan (H)" },
   ];
 
   const drawTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "pen", icon: <Pencil size={22} />, label: "Pen (P)" },
-    { id: "rect", icon: <Square size={22} />, label: "Rectangle (R)" },
-    { id: "circle", icon: <Circle size={22} />, label: "Circle (C)" },
-    { id: "diamond", icon: <Diamond size={22} />, label: "Diamond" },
-    { id: "line", icon: <Minus size={22} />, label: "Line (L)" },
-    { id: "arrow", icon: <ArrowUpRight size={22} />, label: "Arrow (A)" },
+    { id: "pen", icon: <Pencil size={18} />, label: "Pen (P)" },
+    { id: "rect", icon: <Square size={18} />, label: "Rectangle (R)" },
+    { id: "circle", icon: <Circle size={18} />, label: "Circle (C)" },
+    { id: "diamond", icon: <Diamond size={18} />, label: "Diamond" },
+    { id: "line", icon: <Minus size={18} />, label: "Line (L)" },
+    { id: "arrow", icon: <ArrowUpRight size={18} />, label: "Arrow (A)" },
   ];
 
   const utilityTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "text", icon: <Type size={22} />, label: "Text (T)" },
-    { id: "eraser", icon: <Eraser size={22} />, label: "Eraser (E)" },
-    { id: "comment", icon: <MessageSquare size={22} />, label: "Comment" },
+    { id: "text", icon: <Type size={18} />, label: "Text (T)" },
+    { id: "eraser", icon: <Eraser size={18} />, label: "Eraser (E)" },
+    { id: "comment", icon: <MessageSquare size={18} />, label: "Comment" },
   ];
 
   if (collapsed) {
     return (
-      <div className="fixed left-4 z-30 top-1/2 -translate-y-1/2">
+      <div className="fixed left-1 sm:left-4 z-30 top-1/2 -translate-y-1/2">
         <button
           onClick={() => setCollapsed(false)}
-          className="bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 rounded-full border border-blue-400 w-12 h-12 flex items-center justify-center hover:shadow-xl transition-all duration-200"
+          className="bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 rounded-full border border-blue-400 w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center hover:shadow-xl transition-all duration-200"
           title="Open toolbar"
         >
-          <ChevronRight size={20} className="text-white" />
+          <ChevronRight size={16} className="text-white" />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="fixed left-4 z-30 top-1/2 -translate-y-1/2 flex flex-col gap-0 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden w-72 max-h-[90vh] overflow-y-auto">
-
-      {/* Header */}
-      <div className="sticky top-0 flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
-        <h3 className="text-sm font-bold text-gray-800">Tools & Style</h3>
+    <div className="fixed left-1 sm:left-4 z-30 top-1/2 -translate-y-1/2 flex flex-col gap-0 bg-white shadow-2xl rounded-xl sm:rounded-2xl border border-gray-200 overflow-hidden max-h-[90vh] overflow-y-auto w-[140px] sm:w-72">
+      <div className="sticky top-0 flex items-center justify-between p-2 sm:p-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
+        <h3 className="text-[10px] sm:text-sm font-bold text-gray-800">Tools</h3>
         <button
           onClick={() => setCollapsed(true)}
-          className="p-1.5 hover:bg-gray-200 rounded-lg transition-all"
+          className="p-1 sm:p-1.5 hover:bg-gray-200 rounded-lg transition-all"
           title="Close toolbar"
         >
-          <ChevronLeft size={18} className="text-gray-400" />
+          <ChevronLeft size={14} className="text-gray-400" />
         </button>
       </div>
 
-      {/* Tools Grid */}
-      <div className="p-3 space-y-2">
-        {/* Main Tools */}
+      <div className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Selection</p>
-          <div className="grid grid-cols-2 gap-2">
+          <p className="text-[9px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 sm:mb-2">Selection</p>
+          <div className="grid grid-cols-2 gap-1 sm:gap-2">
             {mainTools.map((tool) => (
               <ToolButton
                 key={tool.id}
@@ -150,10 +146,9 @@ export const ToolSidebar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Draw Tools */}
-        <div className="pt-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Drawing</p>
-          <div className="grid grid-cols-3 gap-2">
+        <div className="pt-1 sm:pt-2">
+          <p className="text-[9px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 sm:mb-2">Drawing</p>
+          <div className="grid grid-cols-3 gap-1 sm:gap-2">
             {drawTools.map((tool) => (
               <ToolButton
                 key={tool.id}
@@ -166,10 +161,9 @@ export const ToolSidebar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Utility Tools */}
-        <div className="pt-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Utilities</p>
-          <div className="grid grid-cols-3 gap-2">
+        <div className="pt-1 sm:pt-2">
+          <p className="text-[9px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 sm:mb-2">Utilities</p>
+          <div className="grid grid-cols-3 gap-1 sm:gap-2">
             {utilityTools.map((tool) => (
               <ToolButton
                 key={tool.id}
@@ -182,73 +176,69 @@ export const ToolSidebar: React.FC<Props> = ({
             <button
               onClick={onOpenLibrary}
               title="Icon Library"
-              className={`p-3 rounded-xl transition-all flex items-center justify-center ${selectedTool === "icon"
+              className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all flex items-center justify-center ${selectedTool === "icon"
                   ? "bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg"
                   : "text-gray-600 hover:bg-orange-50 hover:text-orange-600"
                 }`}
             >
-              <Box size={22} />
+              <Box size={18} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Style Controls */}
       <div className="border-t border-gray-200">
         <button
           onClick={() => setExpandedSection(expandedSection === "style" ? null : "style")}
-          className="w-full px-3 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          className="w-full px-2 sm:px-3 py-2 sm:py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
         >
-          <div className="flex items-center gap-2">
-            <Palette size={18} className="text-blue-600" />
-            <span className="text-sm font-semibold text-gray-700">Style & Options</span>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Palette size={14} className="text-blue-600" />
+            <span className="text-[10px] sm:text-sm font-semibold text-gray-700">Style</span>
           </div>
           <ChevronRight
-            size={18}
+            size={14}
             className={`text-gray-400 transition-transform ${expandedSection === "style" ? "rotate-90" : ""}`}
           />
         </button>
 
         {expandedSection === "style" && (
-          <div className="px-3 pb-3 space-y-3 border-t border-gray-200 bg-gray-50">
-
-            {/* Color Controls */}
-            <div className="space-y-2">
+          <div className="px-2 sm:px-3 pb-2 sm:pb-3 space-y-2 sm:space-y-3 border-t border-gray-200 bg-gray-50">
+            <div className="space-y-1.5 sm:space-y-2">
               <div>
-                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Stroke Color</label>
-                <div className="flex gap-2">
+                <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Stroke</label>
+                <div className="flex gap-1 sm:gap-2">
                   <div className="flex-1">
                     <input
                       type="color"
                       value={strokeColor}
                       onChange={e => onStrokeColorChange(e.target.value)}
-                      className="w-full h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
+                      className="w-full h-8 sm:h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
                     />
                   </div>
-                  <span className="text-xs text-gray-500 flex items-center">{strokeColor}</span>
+                  <span className="text-[9px] sm:text-xs text-gray-500 flex items-center">{strokeColor}</span>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Fill Color</label>
-                <div className="flex gap-2">
+                <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Fill</label>
+                <div className="flex gap-1 sm:gap-2">
                   <div className="flex-1">
                     <input
                       type="color"
                       value={fillColor}
                       onChange={e => onFillColorChange(e.target.value)}
-                      className="w-full h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
+                      className="w-full h-8 sm:h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
                     />
                   </div>
-                  <span className="text-xs text-gray-500 flex items-center">{fillColor}</span>
+                  <span className="text-[9px] sm:text-xs text-gray-500 flex items-center">{fillColor}</span>
                 </div>
               </div>
             </div>
 
-            {/* Preset Colors */}
             <div>
-              <label className="text-xs font-semibold text-gray-600 block mb-1.5">Presets</label>
-              <div className="grid grid-cols-6 gap-1.5">
+              <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Presets</label>
+              <div className="grid grid-cols-6 gap-1 sm:gap-1.5">
                 {presetColors.slice(0, 12).map((c) => (
                   <ColorPreset
                     key={c}
@@ -260,11 +250,10 @@ export const ToolSidebar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Recent Colors */}
             {recentColors.length > 0 && (
               <div>
-                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Recent</label>
-                <div className="grid grid-cols-6 gap-1.5">
+                <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Recent</label>
+                <div className="grid grid-cols-6 gap-1 sm:gap-1.5">
                   {recentColors.slice(0, 12).map((c) => (
                     <ColorPreset
                       key={c}
@@ -277,12 +266,11 @@ export const ToolSidebar: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Sliders */}
-            <div className="space-y-3 pt-2">
+            <div className="space-y-2 sm:space-y-3 pt-1 sm:pt-2">
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-xs font-semibold text-gray-600">Stroke Width</label>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{strokeWidth}px</span>
+                <div className="flex justify-between items-center mb-1 sm:mb-2">
+                  <label className="text-[10px] sm:text-xs font-semibold text-gray-600">Width</label>
+                  <span className="text-[10px] sm:text-xs font-bold text-blue-600 bg-blue-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">{strokeWidth}px</span>
                 </div>
                 <input
                   type="range"
@@ -290,14 +278,14 @@ export const ToolSidebar: React.FC<Props> = ({
                   max={20}
                   value={strokeWidth}
                   onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
-                  className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                  className="w-full accent-blue-600 h-1.5 sm:h-2 rounded-lg cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-xs font-semibold text-gray-600">Opacity</label>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{opacity}%</span>
+                <div className="flex justify-between items-center mb-1 sm:mb-2">
+                  <label className="text-[10px] sm:text-xs font-semibold text-gray-600">Opacity</label>
+                  <span className="text-[10px] sm:text-xs font-bold text-blue-600 bg-blue-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">{opacity}%</span>
                 </div>
                 <input
                   type="range"
@@ -305,18 +293,17 @@ export const ToolSidebar: React.FC<Props> = ({
                   max={100}
                   value={opacity}
                   onChange={(e) => onOpacityChange(Number(e.target.value))}
-                  className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                  className="w-full accent-blue-600 h-1.5 sm:h-2 rounded-lg cursor-pointer"
                 />
               </div>
 
-              {/* Line Style */}
               {onLineStyleChange && (
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Line Style</label>
+                  <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Line Style</label>
                   <select
                     value={lineStyle}
                     onChange={(e) => onLineStyleChange(e.target.value as "solid" | "dashed" | "dotted")}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="solid">Solid ━━━</option>
                     <option value="dashed">Dashed ─ ─ ─</option>
@@ -325,14 +312,13 @@ export const ToolSidebar: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* Arrow Style */}
               {onArrowStyleChange && selectedTool === "arrow" && (
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Arrow Head</label>
+                  <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Arrow Head</label>
                   <select
                     value={arrowStyle}
                     onChange={(e) => onArrowStyleChange(e.target.value as "default" | "filled" | "none")}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="default">Default →</option>
                     <option value="filled">Filled ▶</option>
@@ -341,12 +327,11 @@ export const ToolSidebar: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* Eraser Size */}
               {onEraserSizeChange && selectedTool === "eraser" && (
                 <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="text-xs font-semibold text-gray-600">Eraser Size</label>
-                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{eraserSize}px</span>
+                  <div className="flex justify-between items-center mb-1 sm:mb-2">
+                    <label className="text-[10px] sm:text-xs font-semibold text-gray-600">Eraser Size</label>
+                    <span className="text-[10px] sm:text-xs font-bold text-blue-600 bg-blue-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded">{eraserSize}px</span>
                   </div>
                   <input
                     type="range"
@@ -354,7 +339,7 @@ export const ToolSidebar: React.FC<Props> = ({
                     max={50}
                     value={eraserSize}
                     onChange={(e) => onEraserSizeChange(Number(e.target.value))}
-                    className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                    className="w-full accent-blue-600 h-1.5 sm:h-2 rounded-lg cursor-pointer"
                   />
                 </div>
               )}

@@ -87,7 +87,7 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
         <div className="grid gap-4 sm:grid-cols-[1.5fr_1fr]">
           <div className="space-y-3">
             <label className="block text-sm font-medium text-slate-700">Create a new room</label>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <input
                 className="flex-1 rounded-2xl border border-slate-300 px-4 py-3 focus:border-slate-500 focus:outline-none"
                 value={newRoom}
@@ -121,7 +121,7 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
           <div className="mt-3 space-y-3">
             <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
               Or connect by room id / link:
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
                 <input value={joinId} onChange={e => setJoinId(e.target.value)} placeholder="Enter room id" className="flex-1 rounded-2xl border border-slate-300 px-4 py-2" />
                 <button onClick={handleJoinById} className="rounded-2xl border border-slate-300 px-4 py-2">Connect</button>
               </div>

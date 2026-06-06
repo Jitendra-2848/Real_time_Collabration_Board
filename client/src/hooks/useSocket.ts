@@ -3,40 +3,6 @@ import { io, type Socket } from "socket.io-client";
 import type { Element } from "../lib/types";
 import toast from "react-hot-toast";
 
-/**
- * useSocket — robust socket connection hook for a multi-instance cluster.
- *
- * EVENT API (server -> client)
- * ----------------------------
- *  - init-state          : Element[]   (full board snapshot on join)
- *  - element-created     : Element     (one element added)
- *  - element-updated     : Element     (one element changed)
- *  - element-deleted     : elementId   (one element removed)
- *  - board-state         : Element[]   (full snapshot, used for templates)
- *  - chat-history        : any[]       (chat messages on join)
- *  - chat-message        : any         (one new chat message)
- *  - presence            : { count }   (cluster-wide peer count)
- *  - join-request        : { socketId, user }  (manual approval flow)
- *  - join-accepted       : ()          (manual approval granted)
- *  - join-rejected       : ()          (manual approval denied)
- *  - error               : { code, message }  (terminal errors)
- *
- * CLIENT -> SERVER
- * ----------------------------
- *  - element-create : Element
- *  - element-update : Element
- *  - element-delete : elementId
- *  - board-state    : Element[]   (rare, used after big reset)
- *  - chat-message   : { message: string }
- *  - join-response  : { socketId, accept }
- *
- * Notes
- *  - Reconnect re-runs the auth handshake, so the user is rejoined
- *    automatically and receives an `init-state` after reconnect.
- *  - All `element-*` events are *incremental* — no need to re-send the
- *    full board for every change. This keeps the network and other
- *    clients' React renders cheap.
- */
 export const useSocket = (
   SOCKET_URL: string,
   roomId: string | number | null,
@@ -64,7 +30,6 @@ export const useSocket = (
       return;
     }
 
-    console.log('🔌 [socket] connecting to', SOCKET_URL, 'roomId=', roomId);
     const socket = io(SOCKET_URL, {
       auth: { roomId, token },
       transports: ["websocket", "polling"],
@@ -81,9 +46,7 @@ export const useSocket = (
 
     socketRef.current = socket;
 
-    // ---------- connection lifecycle ----------
     socket.on("connect", () => {
-      console.log("✅ [socket] connected:", socket.id);
       setSocketConnected(true);
       setReconnectAttempt(0);
       setLastError(null);
@@ -91,7 +54,6 @@ export const useSocket = (
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("❌ [socket] disconnected:", reason);
       setSocketConnected(false);
       if (reason === "io server disconnect" || reason === "transport close") {
         toast.error("Disconnected from collaboration server. Reconnecting...");
@@ -114,11 +76,9 @@ export const useSocket = (
     });
 
     socket.on('error', (error: any) => {
-      console.error('❌ [socket] error:', error);
       if (error && typeof error === 'object' && error.code) {
         setLastError({ code: error.code, message: error.message || '', ts: Date.now() });
         if (['INVALID_TOKEN', 'BAD_HANDSHAKE'].includes(error.code)) {
-          console.warn('[socket] Auth token invalid — clearing stored auth and reloading');
           localStorage.removeItem('collab-auth');
           localStorage.removeItem('collab-room');
           toast.error('Session expired. Please log in again.');
@@ -136,10 +96,8 @@ export const useSocket = (
     });
 
     socket.on('connect_error', (error: Error) => {
-      console.error('❌ [socket] connect_error:', error.message);
       setSocketConnected(false);
       if (error.message === 'INVALID_TOKEN' || error.message === 'BAD_HANDSHAKE') {
-        console.warn('[socket] connect_error — invalid token, clearing auth');
         localStorage.removeItem('collab-auth');
         localStorage.removeItem('collab-room');
         toast.error('Session expired. Please log in again.');
@@ -149,7 +107,6 @@ export const useSocket = (
       }
     });
 
-    // ---------- domain events ----------
     socket.on("presence", ({ count }: { count: number }) => {
       setPeerCount(typeof count === "number" ? count : 1);
     });
@@ -167,8 +124,6 @@ export const useSocket = (
     });
 
     socket.on("init-state", (serverElements: Element[]) => {
-      console.log("📦 [socket] init-state:", serverElements?.length ?? 0, "elements");
-      // Dismiss any awaiting approval loading toast
       toast.dismiss("awaiting-approval");
       onElementsUpdate(serverElements || []);
     });
@@ -186,13 +141,12 @@ export const useSocket = (
       if (onJoinRequest) onJoinRequest(req);
     });
 
-    // INCREMENTAL element events — these are the ones used 99% of the time.
     socket.on("element-created", (newElement: Element) => {
       if (newElement.id === "__connectors_state__" || newElement.id === "__comments_state__") {
         onElementsUpdate((prev: Element[]) => [...prev, newElement]);
       } else {
         onElementsUpdate((prev: Element[]) => {
-          if (prev.some(el => el.id === newElement.id)) return prev; // de-dupe
+          if (prev.some(el => el.id === newElement.id)) return prev;
           return [...prev, newElement];
         });
       }
@@ -212,23 +166,17 @@ export const useSocket = (
       onElementsUpdate((prev: Element[]) => prev.filter((el) => el.id !== elementId));
     });
 
-    // Full board state (used after template import, etc.)
     socket.on("board-state", (serverElements: Element[]) => {
       onElementsUpdate(serverElements || []);
     });
 
     return () => {
-      console.log('🔌 [socket] cleanup');
-      try { socket.disconnect(); } catch (e) { /* ignore */ }
+      try { socket.disconnect(); } catch (e) {}
       socket.off();
       socketRef.current = null;
     };
   }, [SOCKET_URL, roomId, token]);
 
-  /**
-   * All emit helpers safely no-op when the socket is not connected
-   * (so local state still works offline / while connecting).
-   */
   const safeEmit = (event: string, ...args: any[]) => {
     const s = socketRef.current;
     if (!s || !s.connected) return;

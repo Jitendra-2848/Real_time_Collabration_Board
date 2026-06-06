@@ -19,13 +19,11 @@ import { DiagramPanel } from "./components/DiagramPanel";
 import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
-// Hooks
 import { useHistory } from "./hooks/useHistory";
 import { useUI } from "./hooks/useUI";
 import { useDrawingStyle } from "./hooks/useDrawingStyle";
 import { useSocket } from "./hooks/useSocket";
 
-// Services
 import * as ExportService from "./services/exportService";
 import * as AlignmentService from "./services/alignmentService";
 import * as SelectionService from "./services/selectionService";
@@ -33,20 +31,15 @@ import * as BoardService from "./services/boardService";
 import * as StorageService from "./services/storageService";
 import * as ConnectorService from "./services/connectorService";
 
-// Constants
 import { RESIZE_HANDLE_SIZE, EDGE_THRESHOLD } from "./constants/tools";
 import { TEMPLATES } from "./constants/templates";
 
-// Handlers
 import { handleKeyDown } from "./handlers/keyboardHandlers";
 import { getReshapeHandleAtPoint } from "./lib/renderer";
 import { handleTextBlur, createTextElement, createStickyNote } from "./handlers/textHandlers";
 import { isLongPress } from "./handlers/touchHandlers";
 
 export const App = () => {
-  // =========================================================
-  // STATE
-  // =========================================================
   const { elements, setElements, pushToHistory, updateElementsFromServer, undo, redo, canUndo, canRedo, history, historyIndex } = useHistory([]);
   const ui = useUI();
   const drawingStyle = useDrawingStyle();
@@ -58,21 +51,17 @@ export const App = () => {
     setDefaultTextStyle(next);
   };
 
-  // View
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [bgTheme, setBgTheme] = useState<"white" | "light-grid" | "dark" | "dark-grid">("light-grid");
 
-  // Text editing
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
 
-  // Clipboard, rubber-band, grouping
   const clipboardRef = useRef<Element[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [nextGroupId, setNextGroupId] = useState(1);
 
-  // Guides, comments, connectors
   const [guides, setGuides] = useState<Guide[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -82,16 +71,13 @@ export const App = () => {
   } | null>(null);
   const [diagramPanelOpen, setDiagramPanelOpen] = useState(false);
 
-  // Boards
   const [boards, setBoards] = useState<BoardService.Board[]>([{ id: "board-1", name: "Board 1", elements: [] }]);
   const [activeBoardId, setActiveBoardId] = useState("board-1");
 
-  // Auth & Rooms
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [user, setUser] = useState<{ id: number; username: string } | null>(null);
   const [currentRoom, setCurrentRoom] = useState<{ id: string | number; name: string } | null>(null);
 
-  // Socket
   const defaultSocketUrl = typeof window !== "undefined"
     ? `${window.location.protocol}//${window.location.hostname}:8000`
     : "http://localhost:8000";
@@ -183,13 +169,12 @@ export const App = () => {
   const throttledUpdateElement = useCallback((el: Element) => {
     const now = Date.now();
     const lastEmit = throttledUpdateElementRef.current[el.id] || 0;
-    if (now - lastEmit > 50) { // Limit to 20fps for low-overhead smooth collaboration
+    if (now - lastEmit > 50) {
       updateElement(el);
       throttledUpdateElementRef.current[el.id] = now;
     }
   }, [updateElement]);
 
-  // Refs
   const currentId = useRef<string | null>(null);
   const offset = useRef<Point>({ x: 0, y: 0 });
   const selectionOrigin = useRef<Point | null>(null);
@@ -205,16 +190,13 @@ export const App = () => {
   const connectorsRef = useRef<Connector[]>(connectors);
   const actionStartElements = useRef<Element[] | null>(null);
 
-  // FIX: Add lastMousePos ref for accurate delta tracking
   const lastMousePos = useRef<Point>({ x: 0, y: 0 });
   const reconnectConnectorInfo = useRef<{ connectorId: string; end: "source" | "target" } | null>(null);
 
-  // Keep refs in sync
   useEffect(() => { activeBoardIdRef.current = activeBoardId; }, [activeBoardId]);
   useEffect(() => { elementsRef.current = elements; }, [elements]);
   useEffect(() => { connectorsRef.current = connectors; }, [connectors]);
 
-  // Sync connectors state to server (via special elements channel metadata)
   useEffect(() => {
     if (socketConnected && currentRoom && socketRef.current) {
       const json = JSON.stringify(connectors);
@@ -245,12 +227,10 @@ export const App = () => {
     }
   }, [connectors, comments, socketConnected, currentRoom]);
 
-  // Sync elements with active board
   useEffect(() => {
     setElements(boards.find(b => b.id === activeBoardId)?.elements || []);
   }, [activeBoardId]);
 
-  // Auth Init
   useEffect(() => {
     const savedAuth = localStorage.getItem('collab-auth');
     if (savedAuth) {
@@ -262,13 +242,11 @@ export const App = () => {
             const payload = JSON.parse(atob(parts[1]));
             const isExpired = payload.exp && payload.exp * 1000 < Date.now();
             if (isExpired) {
-              console.warn('[auth] Stored token is expired — clearing');
               localStorage.removeItem('collab-auth');
               localStorage.removeItem('collab-room');
             } else {
               setAuthToken(parsed.token);
               setUser(parsed.user);
-              console.log('[auth] Restored session for:', parsed.user.username);
             }
           } else {
             localStorage.removeItem('collab-auth');
@@ -352,7 +330,6 @@ export const App = () => {
     }
   }, [historyIndex, history, elements, redo, syncElementsDiff, syncBoard]);
 
-  // Background theme
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -360,9 +337,6 @@ export const App = () => {
     container.classList.add(bgTheme.includes("dark") ? "bg-gray-900" : "bg-gray-50");
   }, [bgTheme]);
 
-  // =========================================================
-  // HANDLERS
-  // =========================================================
   const handleAuthSuccess = (user: { id: number; username: string }, token: string) => {
     setUser(user);
     setAuthToken(token);
@@ -377,10 +351,8 @@ export const App = () => {
     localStorage.setItem("collab-room", JSON.stringify({ id: roomId, name: roomName }));
   };
 
-  // Auto-save
   useEffect(() => {
     if (currentRoom) return;
-
     const timer = setInterval(() => {
       StorageService.saveToLocalStorage(elementsRef.current, boards, activeBoardIdRef.current);
     }, 5000);
@@ -393,7 +365,6 @@ export const App = () => {
     return () => clearInterval(timer);
   }, [currentRoom]);
 
-  // Helpers
   const getSelectedElements = (): Element[] => elements.filter(el => el.isSelected);
   const getSelected = () => elements.find(el => el.isSelected);
 
@@ -446,21 +417,19 @@ export const App = () => {
     return { sourceAnchor: best.s, targetAnchor: best.t };
   };
 
-  // Wheel zoom
+  // Zoom on canvas only
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const canvas = canvasRef.current;
+    if (!canvas || ui.presentationMode) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (ui.presentationMode) return;
       const delta = e.deltaY > 0 ? -1 : 1;
       setZoom(prev => Math.min(Math.max(prev * (1 + delta * 0.08), 0.1), 5));
     };
-    container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheel);
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
   }, [ui.presentationMode]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDownEvent = (e: KeyboardEvent) => {
       if (editingElementId) return;
@@ -717,16 +686,20 @@ export const App = () => {
     ExportService.exportCanvasToSVG(elements);
     toast.success("Board exported as SVG!");
   };
+  const closeAllPanelsExcept = (exceptName: string) => {
+    if (exceptName !== "comments") ui.setCommentsPanelOpen(false);
+    if (exceptName !== "layers") ui.setLayersPanelOpen(false);
+    if (exceptName !== "properties") ui.setPropertiesPanelOpen(false);
+    if (exceptName !== "templates") ui.setTemplatesOpen(false);
+    if (exceptName !== "diagram") setDiagramPanelOpen(false);
+  };
+
   const exportPDF = () => {
     if (canvasRef.current) {
       ExportService.exportCanvasToPDF(canvasRef.current);
       toast.success("Board exported as PDF!");
     }
   };
-
-  // =========================================================
-  // CANVAS MOUSE HANDLERS - FIXED
-  // =========================================================
 
   const handleMouseDown = (e: React.MouseEvent) => {
     actionStartElements.current = elements;
@@ -739,10 +712,7 @@ export const App = () => {
     const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
     const clickedElement = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
 
-    console.log('[mousedown] detail:', e.detail, 'editingElementId:', editingElementId, 'clickedElement:', clickedElement?.id ?? null);
-
     if (e.detail === 2) {
-      console.log('[doubleclick via mousedown] target element:', clickedElement?.id ?? 'none (create text)');
       if (editingElementId) {
         handleTextBlurEvent();
       }
@@ -754,7 +724,6 @@ export const App = () => {
         }
         setEditingElementId(clickedElement.id);
         setEditingText(clickedElement.text || '');
-        console.log('[doubleclick] editing element:', clickedElement.id);
       } else {
         const id = uuid();
         currentId.current = id;
@@ -764,7 +733,6 @@ export const App = () => {
         setElements([...elements, { ...newEl, id }]);
         setEditingElementId(id);
         setEditingText('');
-        console.log('[doubleclick] created new text element:', id);
       }
       return;
     }
@@ -875,7 +843,6 @@ export const App = () => {
             reshapeOrigin.current = { handle: reshapeHandle, startMouse: point, startEl: selectedEl };
             return;
           } else {
-            // Side handle connection port
             const newId = uuid();
             connectionOrigin.current = { elementId: selectedEl.id, point };
             currentId.current = newId;
@@ -940,7 +907,6 @@ export const App = () => {
         setElements(nextElements);
         currentId.current = clicked.id;
         offset.current = { x: point.x - clicked.x, y: point.y - clicked.y };
-        // FIX: Store the element's original position for absolute movement calculation
         selectionOrigin.current = { x: clicked.x, y: clicked.y };
         ui.setAction("moving");
         return;
@@ -994,17 +960,14 @@ export const App = () => {
 
     const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
 
-    // FIX: Calculate screen-space delta, then convert to canvas-space
     const screenDeltaX = e.clientX - lastMousePos.current.x;
     const screenDeltaY = e.clientY - lastMousePos.current.y;
     const canvasDeltaX = screenDeltaX / zoom;
     const canvasDeltaY = screenDeltaY / zoom;
 
-    // Update last mouse position
     lastMousePos.current = { x: e.clientX, y: e.clientY };
 
     if (ui.action === "panning") {
-      // FIX: Panning uses screen delta (not divided by zoom) for 1:1 movement
       setPan((prev) => ({ x: prev.x + screenDeltaX, y: prev.y + screenDeltaY }));
     } else if (ui.action === "drawing") {
       let updatedEl: Element | null = null;
@@ -1021,7 +984,6 @@ export const App = () => {
         throttledUpdateElement(updatedEl);
       }
     } else if (ui.action === "moving") {
-      // FIX: Use canvas delta for smooth, zoom-independent movement
       const updatedElements: Element[] = [];
       setElements((prev) =>
         prev.map((el) => {
@@ -1060,7 +1022,6 @@ export const App = () => {
     } else if (ui.action === "resizing" && currentId.current) {
       let updatedEl: Element | null = null;
       if (reshapeOrigin.current) {
-        // FIX: Calculate cumulative delta from original position
         const delta = {
           x: point.x - reshapeOrigin.current.startMouse.x,
           y: point.y - reshapeOrigin.current.startMouse.y
@@ -1234,9 +1195,7 @@ export const App = () => {
     }
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    console.log('[handleDoubleClick] fired — handled in mousedown via e.detail===2');
-  };
+  const handleDoubleClick = (e: React.MouseEvent) => {};
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1250,7 +1209,6 @@ export const App = () => {
     ui.setContextMenu({ x: e.clientX, y: e.clientY, elementId: clicked?.id });
   };
 
-  // Touch support
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
@@ -1341,7 +1299,6 @@ export const App = () => {
       color: editingElement.color,
       textAlign: "left" as const,
     } : {
-      // Shape elements: center textarea inside the shape
       left: `${(editingElementBounds.x + editingElementBounds.width / 2) * zoom + pan.x - Math.max(120, editingElementBounds.width * zoom - 20) / 2}px`,
       top: `${(editingElementBounds.y + editingElementBounds.height / 2) * zoom + pan.y - Math.max(36, editingElementBounds.height * zoom - 20) / 2}px`,
       width: `${Math.max(120, editingElementBounds.width * zoom - 20)}px`,
@@ -1392,18 +1349,20 @@ export const App = () => {
   return (
     <div className="h-screen w-screen bg-gray-50 overflow-hidden relative select-none" style={{ touchAction: "none" }}>
 
-      {/* Room Info */}
-      <RoomInfo
-        currentRoom={currentRoom}
-        username={user?.username || ""}
-        socketConnected={socketConnected}
-        peerCount={peerCount}
-        onLeaveRoom={() => {
-          setCurrentRoom(null);
-          localStorage.removeItem("collab-room");
-        }}
-        onLogout={handleLogout}
-      />
+      {/* Room Info - responsive positioning */}
+      <div className="hidden sm:block">
+        <RoomInfo
+          currentRoom={currentRoom}
+          username={user?.username || ""}
+          socketConnected={socketConnected}
+          peerCount={peerCount}
+          onLeaveRoom={() => {
+            setCurrentRoom(null);
+            localStorage.removeItem("collab-room");
+          }}
+          onLogout={handleLogout}
+        />
+      </div>
 
       {/* Board Tabs */}
       <BoardTabs
@@ -1445,11 +1404,11 @@ export const App = () => {
         onImportImage={handleImportImage}
         onZoomToFit={zoomToFit}
         onFullscreen={() => document.documentElement.requestFullscreen()}
-        onToggleComments={() => ui.setCommentsPanelOpen(!ui.commentsPanelOpen)}
-        onToggleLayers={() => ui.setLayersPanelOpen(!ui.layersPanelOpen)}
-        onToggleProperties={() => ui.setPropertiesPanelOpen(!ui.propertiesPanelOpen)}
-        onToggleTemplates={() => ui.setTemplatesOpen(!ui.templatesOpen)}
-        onToggleDiagramEditor={() => setDiagramPanelOpen(!diagramPanelOpen)}
+        onToggleComments={() => { const target = !ui.commentsPanelOpen; closeAllPanelsExcept("comments"); ui.setCommentsPanelOpen(target); }}
+        onToggleLayers={() => { const target = !ui.layersPanelOpen; closeAllPanelsExcept("layers"); ui.setLayersPanelOpen(target); }}
+        onToggleProperties={() => { const target = !ui.propertiesPanelOpen; closeAllPanelsExcept("properties"); ui.setPropertiesPanelOpen(target); }}
+        onToggleTemplates={() => { const target = !ui.templatesOpen; closeAllPanelsExcept("templates"); ui.setTemplatesOpen(target); }}
+        onToggleDiagramEditor={() => { const target = !diagramPanelOpen; closeAllPanelsExcept("diagram"); setDiagramPanelOpen(target); }}
         onPresentation={() => {
           ui.setPresentationMode(true);
           ui.setPresentationIndex(-1);
@@ -1495,7 +1454,21 @@ export const App = () => {
         />
       )}
 
-      {/* Realtime Status Indicator */}
+      {/* Realtime Status Indicator - responsive positioning */}
+      <div className="sm:hidden">
+        <RoomInfo
+          currentRoom={currentRoom}
+          username={user?.username || ""}
+          socketConnected={socketConnected}
+          peerCount={peerCount}
+          onLeaveRoom={() => {
+            setCurrentRoom(null);
+            localStorage.removeItem("collab-room");
+          }}
+          onLogout={handleLogout}
+        />
+      </div>
+
       <RealtimeStatus
         socketConnected={socketConnected}
         peerCount={peerCount}
@@ -1591,7 +1564,7 @@ export const App = () => {
         onBgThemeChange={setBgTheme}
       />
 
-      {/* Minimap (moved to component to avoid wasteful inline draws) */}
+      {/* Minimap */}
       {ui.showMinimap && (
         <div className="fixed bottom-16 right-4 z-30 w-48 h-36 bg-white border rounded-lg shadow-lg overflow-hidden">
           <Minimap elements={elements} pan={pan} zoom={zoom} />
@@ -1607,7 +1580,7 @@ export const App = () => {
           onChange={e => setEditingText(e.target.value)}
           onBlur={handleTextBlurEvent}
           onKeyDown={e => {
-            e.stopPropagation(); // Prevents tool selection and other global shortcuts while typing
+            e.stopPropagation();
             if (e.key === "Escape") { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
           }}
           className="fixed z-[200] border-2 border-blue-500 bg-white p-2 outline-none resize text-base rounded shadow-lg"

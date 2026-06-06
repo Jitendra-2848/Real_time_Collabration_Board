@@ -36,7 +36,6 @@ const TECH_ICONS = [
   { name: "Google Cloud", icon: Si.SiGooglecloud, color: "#4285F4" },
 ];
 
-// Extract raw SVG path strings from react-icons
 const extractPathData = (IconComponent: React.ComponentType) => {
   try {
     const svgString = ReactDOMServer.renderToStaticMarkup(<IconComponent />);
@@ -69,7 +68,7 @@ export const IconLibrary: React.FC<Props> = ({ onSelect, onClose }) => {
   );
 
   return (
-    <div className="fixed left-20 top-20 w-96 bg-white shadow-2xl rounded-2xl border border-gray-200 p-4 z-50">
+    <div className="fixed sm:left-20 sm:top-20 top-1/2 left-1/2 sm:-translate-x-0 sm:-translate-y-0 -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-2rem)] sm:w-96 bg-white shadow-2xl rounded-2xl border border-gray-200 p-4 z-50">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-gray-700">Component Library</h3>
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">

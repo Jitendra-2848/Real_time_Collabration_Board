@@ -99,7 +99,6 @@ export const FormattingToolbar: React.FC<Props> = ({
     const text = textarea.value;
 
     if (start === end) {
-      // Clear entire text from formatting symbols
       const cleared = text
         .replace(/[\*\~\=\^]/g, "")
         .replace(/#+\s+/g, "")
@@ -143,7 +142,6 @@ export const FormattingToolbar: React.FC<Props> = ({
       style={{ touchAction: "none" }}
       onMouseDown={e => e.preventDefault()}
     >
-      {/* Undo/Redo */}
       <div className="flex items-center gap-0.5 border-r pr-2 border-slate-100">
         <button 
           onClick={onUndo} 
@@ -163,7 +161,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Formatting Tags */}
       <div className="flex items-center gap-0.5 border-r pr-2 border-slate-100">
         <button onClick={() => wrapSelection("**", "**", "bold")} title="Bold (Ctrl+B)" className="p-1.5 hover:bg-slate-100 rounded text-slate-600">
           <Bold size={15} />
@@ -185,7 +182,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Spans, Subs, Sups & Lists */}
       <div className="flex items-center gap-0.5 border-r pr-2 border-slate-100">
         <button onClick={() => prependToLine("* ")} title="Bullet List" className="p-1.5 hover:bg-slate-100 rounded text-slate-600">
           <List size={15} />
@@ -204,7 +200,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Headings Selector */}
       <div className="flex items-center gap-1 border-r pr-2 border-slate-100">
         <select 
           onChange={(e) => {
@@ -225,9 +220,7 @@ export const FormattingToolbar: React.FC<Props> = ({
         </select>
       </div>
 
-      {/* Font sizes & Fonts */}
       <div className="flex items-center gap-1 border-r pr-2 border-slate-100">
-        {/* Font Size */}
         <div className="flex items-center gap-0.5" title="Font Size">
           <Type size={14} className="text-slate-400" />
           <input 
@@ -241,7 +234,6 @@ export const FormattingToolbar: React.FC<Props> = ({
           <span className="text-[10px] text-slate-400 font-medium">px</span>
         </div>
 
-        {/* Font Family */}
         <select 
           value={selectedElement.fontFamily || ""}
           onChange={(e) => onUpdateElement(selectedElement.id, { fontFamily: e.target.value })}
@@ -254,7 +246,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         </select>
       </div>
 
-      {/* Text Alignments */}
       <div className="flex items-center gap-0.5 border-r pr-2 border-slate-100">
         <button 
           onClick={() => onUpdateElement(selectedElement.id, { textAlign: "left" })} 
@@ -286,9 +277,7 @@ export const FormattingToolbar: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Spacing, Height & Letter Spacing */}
       <div className="flex items-center gap-1.5 border-r pr-2 border-slate-100 text-xs">
-        {/* Line Height */}
         <div className="flex items-center gap-1" title="Line Height">
           <span className="text-[10px] text-slate-400 font-bold">LH</span>
           <select 
@@ -305,7 +294,6 @@ export const FormattingToolbar: React.FC<Props> = ({
           </select>
         </div>
 
-        {/* Letter Spacing */}
         <div className="flex items-center gap-1" title="Letter Spacing">
           <span className="text-[10px] text-slate-400 font-bold">LS</span>
           <select 
@@ -321,7 +309,6 @@ export const FormattingToolbar: React.FC<Props> = ({
           </select>
         </div>
 
-        {/* Spacing / Padding */}
         <div className="flex items-center gap-1" title="Block Padding">
           <span className="text-[10px] text-slate-400 font-bold">Pad</span>
           <input 
@@ -335,9 +322,7 @@ export const FormattingToolbar: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Colors & Background */}
       <div className="flex items-center gap-1.5 relative border-r pr-2 border-slate-100">
-        {/* Text Color Button */}
         <button 
           onClick={() => setShowColorPicker(showColorPicker === "text" ? null : "text")}
           className="flex items-center gap-1 p-1 hover:bg-slate-100 rounded"
@@ -347,7 +332,6 @@ export const FormattingToolbar: React.FC<Props> = ({
           <span className="text-[10px] text-slate-500 font-bold">A</span>
         </button>
 
-        {/* Highlight/Background Color Button */}
         <button 
           onClick={() => setShowColorPicker(showColorPicker === "bg" ? null : "bg")}
           className="flex items-center gap-1 p-1 hover:bg-slate-100 rounded"
@@ -364,7 +348,6 @@ export const FormattingToolbar: React.FC<Props> = ({
           <span className="text-[10px] text-slate-500 font-bold">BG</span>
         </button>
 
-        {/* Color Popovers */}
         {showColorPicker && (
           <div className="absolute bottom-11 right-0 bg-white border border-slate-200 rounded-xl shadow-xl p-2.5 z-[310] w-48 flex flex-col gap-2">
             <span className="text-[10px] font-bold text-slate-400 uppercase">
@@ -392,7 +375,6 @@ export const FormattingToolbar: React.FC<Props> = ({
               ))}
             </div>
             
-            {/* Hex Input */}
             <div className="flex gap-1 items-center mt-1 border-t pt-1.5 border-slate-100">
               <span className="text-[10px] text-slate-400">#</span>
               <input 
@@ -429,7 +411,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Special Characters & Clear Format & Links */}
       <div className="flex items-center gap-0.5 border-r pr-2 border-slate-100">
         <button onClick={insertLink} title="Insert Hyperlink (Ctrl+K)" className="p-1.5 hover:bg-slate-100 rounded text-slate-600">
           <Link size={15} />
@@ -439,7 +420,6 @@ export const FormattingToolbar: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Special Character Quick Inserts */}
       <div className="flex items-center gap-1">
         {["©", "™", "®", "€", "•", "→"].map(char => (
           <button 

@@ -16,7 +16,7 @@ export const PropertiesPanel: React.FC<Props> = ({
   if (!selectedElement) return null;
 
   return (
-    <div className="fixed right-4 top-24 z-[55] bg-white/90 shadow-2xl rounded-3xl border border-slate-200/60 p-4.5 w-60 max-h-[65vh] overflow-y-auto backdrop-blur-md transition-all duration-300 hover:shadow-3xl">
+    <div className="fixed sm:right-4 sm:top-24 right-0 bottom-0 sm:bottom-auto sm:w-60 w-full z-[55] bg-white/90 shadow-2xl rounded-t-3xl sm:rounded-3xl border-t sm:border border-slate-200/60 p-4.5 max-h-[45vh] sm:max-h-[65vh] overflow-y-auto backdrop-blur-md transition-all duration-300 hover:shadow-3xl">
       <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-100 pb-2.5 mb-3 flex-shrink-0">
         <Sliders size={16} className="text-slate-500" />
         Properties

@@ -16,12 +16,10 @@ export const Minimap: React.FC<Props> = ({ elements, pan, zoom, width = 192, hei
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    // Lightweight minimap rendering: clear -> fill -> draw simple bounds
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, width, height);
 
-    // Compute world bounds from elements to normalize drawing
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     elements.forEach(el => {
       minX = Math.min(minX, el.x || 0);
@@ -38,7 +36,6 @@ export const Minimap: React.FC<Props> = ({ elements, pan, zoom, width = 192, hei
     const offsetX = (width - worldW * scale) / 2 - minX * scale;
     const offsetY = (height - worldH * scale) / 2 - minY * scale;
 
-    // draw simplified elements
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
@@ -57,16 +54,13 @@ export const Minimap: React.FC<Props> = ({ elements, pan, zoom, width = 192, hei
     });
     ctx.restore();
 
-    // draw viewport rectangle
     ctx.save();
     ctx.strokeStyle = "rgba(59,130,246,0.8)";
     ctx.lineWidth = 2;
-    // compute viewport in world coords using pan/zoom and window size
     const vw = (window.innerWidth) / zoom;
     const vh = (window.innerHeight) / zoom;
     const vx = -pan.x / zoom;
     const vy = -pan.y / zoom;
-    // transform to minimap coords
     const rx = vx * scale + offsetX;
     const ry = vy * scale + offsetY;
     const rw = vw * scale;
