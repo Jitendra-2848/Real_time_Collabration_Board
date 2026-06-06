@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { loginUser, registerUser } from '../lib/api';
+import toast from 'react-hot-toast';
 
 interface AuthPageProps {
   onAuthSuccess: (user: { id: number; username: string }, token: string) => void;
@@ -15,6 +16,12 @@ export const AuthPage = ({ onAuthSuccess }: AuthPageProps) => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    
+    if (!username.trim() || !password) {
+      toast.error('Please enter both username and password.');
+      return;
+    }
+    
     setLoading(true);
 
     const action = mode === 'login' ? loginUser : registerUser;
@@ -23,13 +30,16 @@ export const AuthPage = ({ onAuthSuccess }: AuthPageProps) => {
 
     if (result.error) {
       setError(result.error);
+      toast.error(result.error);
       return;
     }
 
     if (result.token && result.user) {
+      toast.success(mode === 'login' ? 'Logged in successfully!' : 'Account created successfully!');
       onAuthSuccess(result.user, result.token);
     } else {
       setError('Unexpected server response.');
+      toast.error('Unexpected server response.');
     }
   };
 

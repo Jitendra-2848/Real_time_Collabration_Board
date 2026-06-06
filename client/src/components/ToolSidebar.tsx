@@ -1,180 +1,364 @@
 import React, { useState } from "react";
 import {
-  MousePointer, Hand, Pencil, Square, Circle, 
+  MousePointer, Hand, Pencil, Square, Circle,
   Minus, ArrowUpRight, Type, Eraser, Box, Diamond,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, MessageSquare, Settings,
+  Palette, Sliders
 } from "lucide-react";
 import type { Tool, Point } from "../lib/types";
 
 interface Props {
   selectedTool: Tool;
   setSelectedTool: (tool: Tool) => void;
-  strokeColor: string; fillColor: string;
-  onStrokeColorChange: (color: string) => void; onFillColorChange: (color: string) => void;
-  strokeWidth: number; onStrokeWidthChange: (width: number) => void;
-  opacity: number; onOpacityChange: (opacity: number) => void;
-  lineStyle?: "solid"|"dashed"|"dotted"; onLineStyleChange?: (s: "solid"|"dashed"|"dotted") => void;
-  arrowStyle?: "default"|"filled"|"none"; onArrowStyleChange?: (s: "default"|"filled"|"none") => void;
-  eraserSize?: number; onEraserSizeChange?: (size: number) => void;
-  presetColors?: string[]; recentColors?: string[];
+  strokeColor: string;
+  fillColor: string;
+  onStrokeColorChange: (color: string) => void;
+  onFillColorChange: (color: string) => void;
+  strokeWidth: number;
+  onStrokeWidthChange: (width: number) => void;
+  opacity: number;
+  onOpacityChange: (opacity: number) => void;
+  lineStyle?: "solid" | "dashed" | "dotted";
+  onLineStyleChange?: (s: "solid" | "dashed" | "dotted") => void;
+  arrowStyle?: "default" | "filled" | "none";
+  onArrowStyleChange?: (s: "default" | "filled" | "none") => void;
+  eraserSize?: number;
+  onEraserSizeChange?: (size: number) => void;
+  presetColors?: string[];
+  recentColors?: string[];
   onOpenLibrary: () => void;
   onAddGuide?: (type: "horizontal" | "vertical", position: number) => void;
   canvasRef?: React.RefObject<HTMLCanvasElement | null>;
-  pan?: Point; zoom?: number;
+  pan?: Point;
+  zoom?: number;
 }
 
+const ColorPreset = ({ color, isSelected, onClick }: { color: string; isSelected?: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className={`w-8 h-8 rounded-lg border-2 transition-all hover:scale-110 ${isSelected ? "border-blue-500 shadow-lg scale-110" : "border-gray-200 hover:border-gray-300"
+      }`}
+    style={{ backgroundColor: color }}
+    title={color}
+  />
+);
+
+const ToolButton = ({ icon, label, selected, onClick }: { icon: React.ReactNode; label: string; selected?: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    title={label}
+    className={`relative p-3 rounded-xl transition-all duration-200 flex items-center justify-center group ${selected
+        ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30"
+        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      }`}
+  >
+    {icon}
+    <span className="absolute left-full ml-3 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+      {label}
+    </span>
+  </button>
+);
+
 export const ToolSidebar: React.FC<Props> = ({
-  selectedTool, setSelectedTool,
-  strokeColor, fillColor, onStrokeColorChange, onFillColorChange,
-  strokeWidth, onStrokeWidthChange, opacity, onOpacityChange,
-  lineStyle = "solid", onLineStyleChange, arrowStyle = "default", onArrowStyleChange,
-  eraserSize = 10, onEraserSizeChange,
-  presetColors = [], recentColors = [],
+  selectedTool,
+  setSelectedTool,
+  strokeColor,
+  fillColor,
+  onStrokeColorChange,
+  onFillColorChange,
+  strokeWidth,
+  onStrokeWidthChange,
+  opacity,
+  onOpacityChange,
+  lineStyle = "solid",
+  onLineStyleChange,
+  arrowStyle = "default",
+  onArrowStyleChange,
+  eraserSize = 10,
+  onEraserSizeChange,
+  presetColors = ["#000000", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF"],
+  recentColors = [],
   onOpenLibrary,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<"style" | null>(null);
 
   const mainTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "select", icon: <MousePointer size={20} />, label: "Select (V)" },
-    { id: "hand", icon: <Hand size={20} />, label: "Pan (H)" },
+    { id: "select", icon: <MousePointer size={22} />, label: "Select (V)" },
+    { id: "hand", icon: <Hand size={22} />, label: "Pan (H)" },
   ];
 
   const drawTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "pen", icon: <Pencil size={20} />, label: "Pen (P)" },
-    { id: "rect", icon: <Square size={20} />, label: "Rectangle (R)" },
-    { id: "circle", icon: <Circle size={20} />, label: "Circle (C)" },
-    { id: "diamond", icon: <Diamond size={20} />, label: "Diamond" },
-    { id: "arrow", icon: <ArrowUpRight size={20} />, label: "Arrow (A)" },
-    { id: "line", icon: <Minus size={20} />, label: "Line (L)" },
+    { id: "pen", icon: <Pencil size={22} />, label: "Pen (P)" },
+    { id: "rect", icon: <Square size={22} />, label: "Rectangle (R)" },
+    { id: "circle", icon: <Circle size={22} />, label: "Circle (C)" },
+    { id: "diamond", icon: <Diamond size={22} />, label: "Diamond" },
+    { id: "line", icon: <Minus size={22} />, label: "Line (L)" },
+    { id: "arrow", icon: <ArrowUpRight size={22} />, label: "Arrow (A)" },
   ];
 
   const utilityTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "text", icon: <Type size={20} />, label: "Text (T)" },
-    { id: "eraser", icon: <Eraser size={20} />, label: "Eraser (E)" },
+    { id: "text", icon: <Type size={22} />, label: "Text (T)" },
+    { id: "eraser", icon: <Eraser size={22} />, label: "Eraser (E)" },
+    { id: "comment", icon: <MessageSquare size={22} />, label: "Comment" },
   ];
 
   if (collapsed) {
     return (
-      <div className="fixed left-2 z-30 top-1/2 -translate-y-1/2">
-        <button onClick={() => setCollapsed(false)}
-          className="bg-white shadow-xl rounded-full border border-gray-200 w-10 h-10 flex items-center justify-center hover:bg-gray-50 transition-all"
-          title="Open toolbar">
-          <ChevronRight size={18} className="text-gray-600" />
+      <div className="fixed left-4 z-30 top-1/2 -translate-y-1/2">
+        <button
+          onClick={() => setCollapsed(false)}
+          className="bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 rounded-full border border-blue-400 w-12 h-12 flex items-center justify-center hover:shadow-xl transition-all duration-200"
+          title="Open toolbar"
+        >
+          <ChevronRight size={20} className="text-white" />
         </button>
       </div>
     );
   }
 
   return (
-    <div className="fixed left-2 z-30 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 p-2 bg-white shadow-2xl rounded-2xl border border-gray-200 w-20">
-      
-      {/* Collapse button */}
-      <button onClick={() => setCollapsed(true)}
-        className="p-1.5 hover:bg-gray-100 rounded-xl flex justify-center mb-1 transition-all"
-        title="Close toolbar">
-        <ChevronLeft size={16} className="text-gray-400" />
-      </button>
+    <div className="fixed left-4 z-30 top-1/2 -translate-y-1/2 flex flex-col gap-0 bg-white shadow-2xl rounded-2xl border border-gray-200 overflow-hidden w-72 max-h-[90vh] overflow-y-auto">
 
-      <div className="text-[8px] text-gray-400 text-center font-medium mb-0.5">MAIN</div>
-      {mainTools.map((tool) => (
-        <button key={tool.id} onClick={() => setSelectedTool(tool.id)} title={tool.label}
-          className={`p-2 rounded-xl transition-all flex justify-center ${
-            selectedTool === tool.id ? "bg-blue-600 text-white shadow-lg scale-105" : "hover:bg-gray-100 text-gray-700"
-          }`}>
-          {tool.icon}
+      {/* Header */}
+      <div className="sticky top-0 flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200">
+        <h3 className="text-sm font-bold text-gray-800">Tools & Style</h3>
+        <button
+          onClick={() => setCollapsed(true)}
+          className="p-1.5 hover:bg-gray-200 rounded-lg transition-all"
+          title="Close toolbar"
+        >
+          <ChevronLeft size={18} className="text-gray-400" />
         </button>
-      ))}
+      </div>
 
-      <hr className="my-1 border-gray-200" />
-      <div className="text-[8px] text-gray-400 text-center font-medium mb-0.5">DRAW</div>
-      {drawTools.map((tool) => (
-        <button key={tool.id} onClick={() => setSelectedTool(tool.id)} title={tool.label}
-          className={`p-2 rounded-xl transition-all flex justify-center ${
-            selectedTool === tool.id ? "bg-blue-600 text-white shadow-lg scale-105" : "hover:bg-gray-100 text-gray-700"
-          }`}>
-          {tool.icon}
-        </button>
-      ))}
-
-      <hr className="my-1 border-gray-200" />
-      <div className="text-[8px] text-gray-400 text-center font-medium mb-0.5">UTILITY</div>
-      {utilityTools.map((tool) => (
-        <button key={tool.id} onClick={() => setSelectedTool(tool.id)} title={tool.label}
-          className={`p-2 rounded-xl transition-all flex justify-center ${
-            selectedTool === tool.id ? "bg-blue-600 text-white shadow-lg scale-105" : "hover:bg-gray-100 text-gray-700"
-          }`}>
-          {tool.icon}
-        </button>
-      ))}
-
-      <button onClick={onOpenLibrary} title="Icon Library"
-        className={`p-2 rounded-xl transition-all flex justify-center ${selectedTool === "icon" ? "bg-blue-600 text-white shadow-lg" : "hover:bg-orange-50 text-orange-600"}`}>
-        <Box size={20} />
-      </button>
-
-      {/* Style Controls */}
-      <hr className="my-1 border-gray-200" />
-      
-      <div className="flex flex-col gap-1.5 mt-1 px-1">
-        <div className="flex flex-col items-center gap-0.5">
-          <label className="text-[8px] text-gray-500">Stroke</label>
-          <input type="color" value={strokeColor} onChange={e => onStrokeColorChange(e.target.value)} className="w-7 h-7 cursor-pointer rounded border p-0.5" />
-        </div>
-        <div className="flex flex-col items-center gap-0.5">
-          <label className="text-[8px] text-gray-500">Fill</label>
-          <input type="color" value={fillColor} onChange={e => onFillColorChange(e.target.value)} className="w-7 h-7 cursor-pointer rounded border p-0.5" />
-        </div>
-
-        <div className="grid grid-cols-3 gap-0.5">
-          {presetColors.slice(0, 6).map(c => (
-            <button key={c} onClick={() => onStrokeColorChange(c)} className="w-3.5 h-3.5 rounded-full border border-gray-200" style={{backgroundColor: c}} />
-          ))}
-        </div>
-
-        {recentColors.length > 0 && (
-          <div className="grid grid-cols-3 gap-0.5 mt-1">
-            {recentColors.slice(0, 6).map(c => (
-              <button key={c} onClick={() => onStrokeColorChange(c)} className="w-3.5 h-3.5 rounded-full border border-gray-200" style={{backgroundColor: c}} />
+      {/* Tools Grid */}
+      <div className="p-3 space-y-2">
+        {/* Main Tools */}
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Selection</p>
+          <div className="grid grid-cols-2 gap-2">
+            {mainTools.map((tool) => (
+              <ToolButton
+                key={tool.id}
+                icon={tool.icon}
+                label={tool.label}
+                selected={selectedTool === tool.id}
+                onClick={() => setSelectedTool(tool.id)}
+              />
             ))}
           </div>
-        )}
-
-        <div className="flex flex-col items-center gap-0.5">
-          <label className="text-[8px] text-gray-500">W {strokeWidth}px</label>
-          <input type="range" min={1} max={20} value={strokeWidth} onChange={e => onStrokeWidthChange(Number(e.target.value))} className="w-full accent-blue-600 h-1" />
         </div>
 
-        <div className="flex flex-col items-center gap-0.5">
-          <label className="text-[8px] text-gray-500">Op {opacity}%</label>
-          <input type="range" min={0} max={100} value={opacity} onChange={e => onOpacityChange(Number(e.target.value))} className="w-full accent-blue-600 h-1" />
+        {/* Draw Tools */}
+        <div className="pt-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Drawing</p>
+          <div className="grid grid-cols-3 gap-2">
+            {drawTools.map((tool) => (
+              <ToolButton
+                key={tool.id}
+                icon={tool.icon}
+                label={tool.label}
+                selected={selectedTool === tool.id}
+                onClick={() => setSelectedTool(tool.id)}
+              />
+            ))}
+          </div>
         </div>
 
-        {onLineStyleChange && (
-          <div className="flex flex-col items-center gap-0.5">
-            <label className="text-[8px] text-gray-500">Line</label>
-            <select value={lineStyle} onChange={e => onLineStyleChange(e.target.value as "solid" | "dashed" | "dotted")} className="text-[9px] w-full border rounded p-0.5">
-              <option value="solid">—</option>
-              <option value="dashed">- -</option>
-              <option value="dotted">···</option>
-            </select>
+        {/* Utility Tools */}
+        <div className="pt-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Utilities</p>
+          <div className="grid grid-cols-3 gap-2">
+            {utilityTools.map((tool) => (
+              <ToolButton
+                key={tool.id}
+                icon={tool.icon}
+                label={tool.label}
+                selected={selectedTool === tool.id}
+                onClick={() => setSelectedTool(tool.id)}
+              />
+            ))}
+            <button
+              onClick={onOpenLibrary}
+              title="Icon Library"
+              className={`p-3 rounded-xl transition-all flex items-center justify-center ${selectedTool === "icon"
+                  ? "bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg"
+                  : "text-gray-600 hover:bg-orange-50 hover:text-orange-600"
+                }`}
+            >
+              <Box size={22} />
+            </button>
           </div>
-        )}
+        </div>
+      </div>
 
-        {onArrowStyleChange && selectedTool === "arrow" && (
-          <div className="flex flex-col items-center gap-0.5">
-            <label className="text-[8px] text-gray-500">Arrow</label>
-            <select value={arrowStyle} onChange={e => onArrowStyleChange(e.target.value as "default" | "filled" | "none")} className="text-[9px] w-full border rounded p-0.5">
-              <option value="default">Default</option>
-              <option value="filled">Filled</option>
-              <option value="none">None</option>
-            </select>
+      {/* Style Controls */}
+      <div className="border-t border-gray-200">
+        <button
+          onClick={() => setExpandedSection(expandedSection === "style" ? null : "style")}
+          className="w-full px-3 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Palette size={18} className="text-blue-600" />
+            <span className="text-sm font-semibold text-gray-700">Style & Options</span>
           </div>
-        )}
+          <ChevronRight
+            size={18}
+            className={`text-gray-400 transition-transform ${expandedSection === "style" ? "rotate-90" : ""}`}
+          />
+        </button>
 
-        {onEraserSizeChange && selectedTool === "eraser" && (
-          <div className="flex flex-col items-center gap-0.5">
-            <label className="text-[8px] text-gray-500">E {eraserSize}px</label>
-            <input type="range" min={5} max={50} value={eraserSize} onChange={e => onEraserSizeChange(Number(e.target.value))} className="w-full accent-blue-600 h-1" />
+        {expandedSection === "style" && (
+          <div className="px-3 pb-3 space-y-3 border-t border-gray-200 bg-gray-50">
+
+            {/* Color Controls */}
+            <div className="space-y-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Stroke Color</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="color"
+                      value={strokeColor}
+                      onChange={e => onStrokeColorChange(e.target.value)}
+                      className="w-full h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500 flex items-center">{strokeColor}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Fill Color</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="color"
+                      value={fillColor}
+                      onChange={e => onFillColorChange(e.target.value)}
+                      className="w-full h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500 flex items-center">{fillColor}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Preset Colors */}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 block mb-1.5">Presets</label>
+              <div className="grid grid-cols-6 gap-1.5">
+                {presetColors.slice(0, 12).map((c) => (
+                  <ColorPreset
+                    key={c}
+                    color={c}
+                    isSelected={strokeColor === c}
+                    onClick={() => onStrokeColorChange(c)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Colors */}
+            {recentColors.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Recent</label>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {recentColors.slice(0, 12).map((c) => (
+                    <ColorPreset
+                      key={c}
+                      color={c}
+                      isSelected={strokeColor === c}
+                      onClick={() => onStrokeColorChange(c)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sliders */}
+            <div className="space-y-3 pt-2">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-semibold text-gray-600">Stroke Width</label>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{strokeWidth}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={strokeWidth}
+                  onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
+                  className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-semibold text-gray-600">Opacity</label>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{opacity}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={opacity}
+                  onChange={(e) => onOpacityChange(Number(e.target.value))}
+                  className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Line Style */}
+              {onLineStyleChange && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Line Style</label>
+                  <select
+                    value={lineStyle}
+                    onChange={(e) => onLineStyleChange(e.target.value as "solid" | "dashed" | "dotted")}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="solid">Solid ━━━</option>
+                    <option value="dashed">Dashed ─ ─ ─</option>
+                    <option value="dotted">Dotted ···</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Arrow Style */}
+              {onArrowStyleChange && selectedTool === "arrow" && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Arrow Head</label>
+                  <select
+                    value={arrowStyle}
+                    onChange={(e) => onArrowStyleChange(e.target.value as "default" | "filled" | "none")}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="default">Default →</option>
+                    <option value="filled">Filled ▶</option>
+                    <option value="none">None —</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Eraser Size */}
+              {onEraserSizeChange && selectedTool === "eraser" && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-xs font-semibold text-gray-600">Eraser Size</label>
+                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{eraserSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={5}
+                    max={50}
+                    value={eraserSize}
+                    onChange={(e) => onEraserSizeChange(Number(e.target.value))}
+                    className="w-full accent-blue-600 h-2 rounded-lg cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

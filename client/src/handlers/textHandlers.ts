@@ -7,24 +7,29 @@ export interface TextEditingState {
   position: Point;
 }
 
+// In handlers/textHandlers.ts (or wherever it's defined)
 export const createTextElement = (
   point: Point,
-  strokeColor: string,
+  color: string,
   opacity: number
 ): Element => {
   const id = uuid();
   return {
     id,
-    tool: "text",
+    tool: "text" as const,
     x: point.x,
     y: point.y,
-    width: 140,
-    height: 30,
-    color: strokeColor,
-    strokeWidth: 1,
+    width: 200, // ✅ Default width
+    height: 60, // ✅ Default height
+    text: "",   // ✅ Empty text
+    color: color,
     fillColor: "transparent",
+    strokeWidth: 0,
     opacity: opacity / 100,
-    text: ""
+    textStyle: "rough",
+    resizable: true,
+    isSelected: false,
+    locked: false,
   };
 };
 

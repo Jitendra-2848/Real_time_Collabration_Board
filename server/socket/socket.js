@@ -35,11 +35,15 @@ import {
   parseRoomChannel,
 } from '../lib/roomState.js';
 
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) 
+  : ["http://localhost:5173"];
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -278,46 +282,68 @@ subClient.on('error', (err) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/*  Connection handler                                                        */
+/*  Connection middleware & handler                                           */
 /* -------------------------------------------------------------------------- */
 
-io.on('connection', async (socket) => {
-  console.log(`\n🔌 [${INSTANCE_ID}] New connection: socketId=${socket.id}`);
+const ipConnections = new Map();
+const userRoomConnections = new Map();
+
+io.use(async (socket, next) => {
   const { roomId, token } = socket.handshake.auth || {};
-  console.log(roomId);
   if (!roomId || !token) {
-    console.error('❌ Connection failed: Missing roomId or token', { roomId });
-    socket.emit('error', { code: 'BAD_HANDSHAKE', message: 'roomId and token are required' });
-    socket.disconnect(true);
-    return;
+    return next(new Error('BAD_HANDSHAKE'));
   }
 
-  // Normalize roomId: the client sends a number, but everything in the
-  // system uses string keys for the room name in Socket.IO adapter.
-  const normalizedRoomId = roomId;
-  console.log(`Room : ${roomId}, roomId=${normalizedRoomId}`);
-  // if (!Number.isFinite(normalizedRoomId) || normalizedRoomId <= 0) {
-  //   socket.emit('error', { code: 'INVALID_ROOM_ID', message: 'Invalid roomId' });
-  //   socket.disconnect(true);
-  //   return;
-  // }
-  const roomKey = String(normalizedRoomId);
-
-  // Auth
+  // 1. Authenticate user
   let user;
   try {
     user = verifyToken(token);
-  } catch (error) {
-    console.error('❌ Connection failed: Invalid token:', error.message);
-    socket.emit('error', { code: 'INVALID_TOKEN', message: 'Invalid token' });
-    socket.disconnect(true);
-    return;
+    socket.data.user = { id: user.id, username: user.username };
+  } catch (err) {
+    return next(new Error('INVALID_TOKEN'));
   }
 
+  // 2. IP Rate Limiting (C4)
+  const ip = socket.handshake.address || socket.conn.remoteAddress;
+  if (!ipConnections.has(ip)) {
+    ipConnections.set(ip, new Set());
+  }
+  const ipSockets = ipConnections.get(ip);
+  if (ipSockets.size >= 10) {
+    console.warn(`[Socket] Connection blocked: IP ${ip} exceeded limit of 10 connections`);
+    return next(new Error('RATE_LIMIT_EXCEEDED'));
+  }
+
+  // 3. Per-user Room limits (C6)
+  const userRoomKey = `${user.id}:${roomId}`;
+  if (!userRoomConnections.has(userRoomKey)) {
+    userRoomConnections.set(userRoomKey, new Set());
+  }
+  const userRoomSockets = userRoomConnections.get(userRoomKey);
+  if (userRoomSockets.size >= 3) {
+    console.warn(`[Socket] Connection blocked: User ${user.username} exceeded limit in room ${roomId}`);
+    return next(new Error('ROOM_CONNECTION_LIMIT_EXCEEDED'));
+  }
+
+  // Track the connection
+  ipSockets.add(socket.id);
+  userRoomSockets.add(socket.id);
+  
+  socket.data.ip = ip;
+  socket.data.userRoomKey = userRoomKey;
+
+  next();
+});
+
+io.on('connection', async (socket) => {
+  console.log(`\n🔌 [${INSTANCE_ID}] New connection: socketId=${socket.id}`);
+  const { roomId } = socket.handshake.auth || {};
+  const normalizedRoomId = roomId;
+  const roomKey = String(normalizedRoomId);
+  const user = socket.data.user;
+
   // Room lookup (with retries + Redis cache)
-  console.log(normalizedRoomId);
   const room = await findRoomSafe(normalizedRoomId);
-  console.log(normalizedRoomId, room ? 'found' : 'not found in DB');
   if (!room) {
     console.error('❌ Connection failed: Room not found in DB', { roomId: normalizedRoomId });
     socket.emit('error', {
@@ -329,10 +355,9 @@ io.on('connection', async (socket) => {
   }
 
   // Track owner status (cluster-wide)
-  const isOwner = user.id === room.created_by;
+  const isOwner = user.id === parseInt(room.created_by);
   socket.data.isRoomOwner = isOwner;
   socket.data.roomKey = roomKey;
-  socket.data.user = { id: user.id, username: user.username };
 
   if (isOwner) {
     await addOwner(roomKey, socket.id);
@@ -386,9 +411,10 @@ io.on('connection', async (socket) => {
     if (DEBUG) console.log('element-create:', newElement?.id);
     const existing = (await getRoomState(normalizedRoomId)) || [];
     const element = { ...newElement, lastModified: newElement.lastModified ?? Date.now() };
+    // Deduplicate: don't add same id twice
+    if (existing.some(el => el.id === element.id)) return;
     const updated = [...existing, element];
     await persistRoomState(normalizedRoomId, updated);
-    console.log(`room:${roomKey}:events`);
     try {
       await pubClient.publish(`room:${roomKey}:events`, JSON.stringify({
         event: 'element-created',
@@ -396,7 +422,8 @@ io.on('connection', async (socket) => {
         senderSocketId: socket.id,
       }));
     } catch (err) {
-      console.error('Failed to publish element-created:', err);
+      console.error('Failed to publish element-created, falling back to local emit:', err.message);
+      socket.to(roomKey).emit('element-created', element);
     }
   });
 
@@ -404,33 +431,41 @@ io.on('connection', async (socket) => {
     if (DEBUG) console.log('element-update:', updatedElement?.id);
     const existing = (await getRoomState(normalizedRoomId)) || [];
     const index = existing.findIndex((el) => el.id === updatedElement.id);
+    const element = { ...updatedElement, lastModified: updatedElement.lastModified ?? Date.now() };
+
     if (index !== -1) {
-      if (!existing[index].lastModified || updatedElement.lastModified > existing[index].lastModified) {
+      const existingTs = existing[index].lastModified ?? 0;
+      const incomingTs = element.lastModified ?? 0;
+      // Accept the update unless the existing record is strictly NEWER
+      if (incomingTs >= existingTs) {
         const updated = [...existing];
-        updated[index] = updatedElement;
+        updated[index] = element;
         await persistRoomState(normalizedRoomId, updated);
-        console.log(`room:${roomKey}:events`);
         try {
           await pubClient.publish(`room:${roomKey}:events`, JSON.stringify({
             event: 'element-updated',
-            data: updatedElement,
+            data: element,
             senderSocketId: socket.id,
           }));
         } catch (err) {
-          console.error('Failed to publish element-updated:', err);
+          // Pub/sub failed — fall back to direct local broadcast so this instance still works
+          console.error('Failed to publish element-updated, falling back to local emit:', err.message);
+          socket.to(roomKey).emit('element-updated', element);
         }
       }
     } else {
-      const updated = [...existing, updatedElement];
+      // Element not found — treat as a create
+      const updated = [...existing, element];
       await persistRoomState(normalizedRoomId, updated);
       try {
         await pubClient.publish(`room:${roomKey}:events`, JSON.stringify({
           event: 'element-created',
-          data: updatedElement,
+          data: element,
           senderSocketId: socket.id,
         }));
       } catch (err) {
-        console.error('Failed to publish element-created:', err);
+        console.error('Failed to publish element-created, falling back to local emit:', err.message);
+        socket.to(roomKey).emit('element-created', element);
       }
     }
   });
@@ -447,7 +482,8 @@ io.on('connection', async (socket) => {
         senderSocketId: socket.id,
       }));
     } catch (err) {
-      console.error('Failed to publish element-deleted:', err);
+      console.error('Failed to publish element-deleted, falling back to local emit:', err.message);
+      socket.to(roomKey).emit('element-deleted', elementId);
     }
   });
 
@@ -548,6 +584,21 @@ io.on('connection', async (socket) => {
       } catch (err) {
         console.error('Failed to remove owner from Redis:', err);
       }
+    }
+
+    // Clean up connections tracking (C4, C6)
+    const ip = socket.data.ip;
+    if (ip && ipConnections.has(ip)) {
+      const ipSockets = ipConnections.get(ip);
+      ipSockets.delete(socket.id);
+      if (ipSockets.size === 0) ipConnections.delete(ip);
+    }
+    
+    const userRoomKey = socket.data.userRoomKey;
+    if (userRoomKey && userRoomConnections.has(userRoomKey)) {
+      const userRoomSockets = userRoomConnections.get(userRoomKey);
+      userRoomSockets.delete(socket.id);
+      if (userRoomSockets.size === 0) userRoomConnections.delete(userRoomKey);
     }
 
     const localMap = pendingJoinRequests.get(roomKey);

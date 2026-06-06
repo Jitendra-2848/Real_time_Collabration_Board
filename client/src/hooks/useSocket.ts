@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import type { Element } from "../lib/types";
+import toast from "react-hot-toast";
 
 /**
  * useSocket — robust socket connection hook for a multi-instance cluster.
@@ -45,6 +46,7 @@ export const useSocket = (
   ) => void,
   onMessagesUpdate?: (messages: any[] | ((prev: any[]) => any[])) => void,
   onJoinRequest?: (req: { socketId: string; user: { id: number; username: string } }) => void,
+  onNewChatMessage?: (msg: any) => void,
 ) => {
   const socketRef = useRef<Socket | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -63,7 +65,6 @@ export const useSocket = (
     }
 
     console.log('🔌 [socket] connecting to', SOCKET_URL, 'roomId=', roomId);
-    console.log("hello");
     const socket = io(SOCKET_URL, {
       auth: { roomId, token },
       transports: ["websocket", "polling"],
@@ -86,11 +87,15 @@ export const useSocket = (
       setSocketConnected(true);
       setReconnectAttempt(0);
       setLastError(null);
+      toast.success("Connected to room!");
     });
 
     socket.on("disconnect", (reason) => {
       console.log("❌ [socket] disconnected:", reason);
       setSocketConnected(false);
+      if (reason === "io server disconnect" || reason === "transport close") {
+        toast.error("Disconnected from collaboration server. Reconnecting...");
+      }
     });
 
     socket.io.on("reconnect_attempt", (n) => {
@@ -105,13 +110,24 @@ export const useSocket = (
         message: "Could not reconnect to the room. Please refresh the page.",
         ts: Date.now(),
       });
+      toast.error("Could not reconnect to the room. Please refresh the page.");
     });
 
-    socket.on("error", (error: any) => {
-      console.error("❌ [socket] error:", error);
-      if (error && typeof error === "object" && error.code) {
-        setLastError({ code: error.code, message: error.message || "", ts: Date.now() });
-        if (["INVALID_TOKEN", "BAD_HANDSHAKE", "INVALID_ROOM_ID", "ROOM_NOT_FOUND"].includes(error.code)) {
+    socket.on('error', (error: any) => {
+      console.error('❌ [socket] error:', error);
+      if (error && typeof error === 'object' && error.code) {
+        setLastError({ code: error.code, message: error.message || '', ts: Date.now() });
+        if (['INVALID_TOKEN', 'BAD_HANDSHAKE'].includes(error.code)) {
+          console.warn('[socket] Auth token invalid — clearing stored auth and reloading');
+          localStorage.removeItem('collab-auth');
+          localStorage.removeItem('collab-room');
+          toast.error('Session expired. Please log in again.');
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          toast.error(error.message || `Socket error: ${error.code}`);
+          if (['INVALID_ROOM_ID', 'ROOM_NOT_FOUND'].includes(error.code)) {
+            localStorage.removeItem('collab-room');
+          }
           socket.disconnect();
         }
       } else {
@@ -119,9 +135,18 @@ export const useSocket = (
       }
     });
 
-    socket.on("connect_error", (error: Error) => {
-      console.error("❌ [socket] connect_error:", error.message);
+    socket.on('connect_error', (error: Error) => {
+      console.error('❌ [socket] connect_error:', error.message);
       setSocketConnected(false);
+      if (error.message === 'INVALID_TOKEN' || error.message === 'BAD_HANDSHAKE') {
+        console.warn('[socket] connect_error — invalid token, clearing auth');
+        localStorage.removeItem('collab-auth');
+        localStorage.removeItem('collab-room');
+        toast.error('Session expired. Please log in again.');
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        toast.error(`Connection error: ${error.message}`);
+      }
     });
 
     // ---------- domain events ----------
@@ -129,8 +154,22 @@ export const useSocket = (
       setPeerCount(typeof count === "number" ? count : 1);
     });
 
+    socket.on("join-accepted", () => {
+      toast.success("Room approval granted!");
+    });
+
+    socket.on("join-rejected", () => {
+      toast.error("Room access request denied.");
+    });
+
+    socket.on("awaiting-approval", () => {
+      toast.loading("Awaiting owner approval to join...", { id: "awaiting-approval" });
+    });
+
     socket.on("init-state", (serverElements: Element[]) => {
       console.log("📦 [socket] init-state:", serverElements?.length ?? 0, "elements");
+      // Dismiss any awaiting approval loading toast
+      toast.dismiss("awaiting-approval");
       onElementsUpdate(serverElements || []);
     });
 
@@ -140,6 +179,7 @@ export const useSocket = (
 
     socket.on("chat-message", (msg: any) => {
       if (onMessagesUpdate) onMessagesUpdate((prev: any[]) => [...(prev || []), msg]);
+      if (onNewChatMessage) onNewChatMessage(msg);
     });
 
     socket.on("join-request", (req: any) => {
@@ -148,16 +188,24 @@ export const useSocket = (
 
     // INCREMENTAL element events — these are the ones used 99% of the time.
     socket.on("element-created", (newElement: Element) => {
-      onElementsUpdate((prev: Element[]) => {
-        if (prev.some(el => el.id === newElement.id)) return prev; // de-dupe
-        return [...prev, newElement];
-      });
+      if (newElement.id === "__connectors_state__" || newElement.id === "__comments_state__") {
+        onElementsUpdate((prev: Element[]) => [...prev, newElement]);
+      } else {
+        onElementsUpdate((prev: Element[]) => {
+          if (prev.some(el => el.id === newElement.id)) return prev; // de-dupe
+          return [...prev, newElement];
+        });
+      }
     });
 
     socket.on("element-updated", (updatedElement: Element) => {
-      onElementsUpdate((prev: Element[]) =>
-        prev.map((el) => (el.id === updatedElement.id ? updatedElement : el)),
-      );
+      if (updatedElement.id === "__connectors_state__" || updatedElement.id === "__comments_state__") {
+        onElementsUpdate((prev: Element[]) => [...prev, updatedElement]);
+      } else {
+        onElementsUpdate((prev: Element[]) =>
+          prev.map((el) => (el.id === updatedElement.id ? updatedElement : el)),
+        );
+      }
     });
 
     socket.on("element-deleted", (elementId: string) => {

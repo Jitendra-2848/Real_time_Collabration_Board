@@ -1,5 +1,6 @@
 import React from "react";
 import { LogOut, Users, Info } from "lucide-react";
+import toast from 'react-hot-toast';
 
 interface Props {
   currentRoom: { id: string | number; name: string } | null;
@@ -54,6 +55,20 @@ export const RoomInfo: React.FC<Props> = ({
         <div className="truncate">
           Logged in as <span className="font-medium text-slate-900">{username}</span>
         </div>
+        {currentRoom?.id && (
+          <div className="flex items-center justify-between gap-1 text-[11px] mt-1 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+            <span className="font-mono text-slate-500 truncate">ID: {currentRoom.id}</span>
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(String(currentRoom.id));
+                toast.success("Room ID copied!");
+              }} 
+              className="text-[10px] text-blue-600 hover:text-blue-800 font-bold ml-1 active:scale-95"
+            >
+              Copy
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2 mt-1">
           <div
             className={`w-2.5 h-2.5 rounded-full transition-colors duration-500 ${

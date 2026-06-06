@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoom, fetchRooms, fetchRoomById } from '../lib/api';
+import toast from 'react-hot-toast';
 
 interface RoomsPageProps {
   token: string;
@@ -21,6 +22,7 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
       const result = await fetchRooms(token);
       if (result.error) {
         setError(result.error);
+        toast.error('Failed to load rooms list.');
       } else {
         setRooms(result.rooms || []);
       }
@@ -29,27 +31,40 @@ export const RoomsPage = ({ token, username, onJoinRoom, onLogout }: RoomsPagePr
   }, [token]);
 
   const handleCreateRoom = async () => {
-    if (!newRoom.trim()) return;
+    if (!newRoom.trim()) {
+      toast.error('Please enter a room name.');
+      return;
+    }
     setError('');
     setLoading(true);
     const result = await createRoom(token, newRoom.trim(), accessMode);
     setLoading(false);
     if (result.error) {
       setError(result.error);
+      toast.error(result.error);
       return;
     }
     setRooms(prev => [result.room, ...prev]);
     setNewRoom('');
+    toast.success('Room created successfully!');
   };
 
   const handleJoinById = async () => {
     setError('');
     const id = joinId.trim();
-    if (!id) return setError('Invalid room id');
+    if (!id) {
+      toast.error('Please enter a room ID.');
+      return;
+    }
     setLoading(true);
     const res = await fetchRoomById(token, id);
     setLoading(false);
-    if (res.error) return setError(res.error);
+    if (res.error) {
+      setError(res.error);
+      toast.error(res.error);
+      return;
+    }
+    toast.success(`Joined room: ${res.room.name}`);
     onJoinRoom(res.room.id, res.room.name);
   };
 

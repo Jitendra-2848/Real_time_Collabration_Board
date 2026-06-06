@@ -44,9 +44,11 @@ console.log('Redis config:', {
 const pubClient = new Redis(redisOptions);
 const subClient = pubClient.duplicate();
 
-// Per-instance sub channel used for signalling (e.g. cache invalidation
-// is handled in lib/roomState.js, but we keep an extra pattern here in
-// case future code wants it).
+// Decouple Socket.IO adapter connections to prevent command queuing under heavy load (H2)
+// Reuse pubClient for ioPubClient since standard queries and publisher commands don't require exclusive connection state
+const ioPubClient = pubClient;
+const ioSubClient = pubClient.duplicate();
+
 const INSTANCE_ID = process.env.INSTANCE_ID || `inst-${process.pid}`;
 
 pubClient.on('connect', () => {
@@ -55,12 +57,18 @@ pubClient.on('connect', () => {
 subClient.on('connect', () => {
   console.log(`🟢 [${INSTANCE_ID}] Redis subscriber connected`);
 });
+ioSubClient.on('connect', () => {
+  console.log(`🟢 [${INSTANCE_ID}] Redis IO subscriber connected`);
+});
 
 pubClient.on('ready', () => {
   console.log(`🟢 [${INSTANCE_ID}] Redis publisher ready`);
 });
 subClient.on('ready', () => {
   console.log(`🟢 [${INSTANCE_ID}] Redis subscriber ready`);
+});
+ioSubClient.on('ready', () => {
+  console.log(`🟢 [${INSTANCE_ID}] Redis IO subscriber ready`);
 });
 
 pubClient.on('error', (err) => {
@@ -69,6 +77,9 @@ pubClient.on('error', (err) => {
 subClient.on('error', (err) => {
   console.error(`🔴 [${INSTANCE_ID}] Redis subscriber error:`, err.message);
 });
+ioSubClient.on('error', (err) => {
+  console.error(`🔴 [${INSTANCE_ID}] Redis IO subscriber error:`, err.message);
+});
 
 pubClient.on('end', () => {
   console.warn(`⚠️  [${INSTANCE_ID}] Redis publisher connection ended`);
@@ -76,15 +87,12 @@ pubClient.on('end', () => {
 subClient.on('end', () => {
   console.warn(`⚠️  [${INSTANCE_ID}] Redis subscriber connection ended`);
 });
+ioSubClient.on('end', () => {
+  console.warn(`⚠️  [${INSTANCE_ID}] Redis IO subscriber connection ended`);
+});
 
-/**
- * Build the @socket.io/redis-adapter. The adapter uses its OWN pub/sub
- * connections internally, so we can pass the same clients (or two
- * dedicated ones) — the lib/roomState.js uses pubClient/subClient for
- * app-level channels.
- */
 export function createRedisAdapter() {
-  return createAdapter(pubClient, subClient);
+  return createAdapter(ioPubClient, ioSubClient);
 }
 
 export { pubClient, subClient, INSTANCE_ID };

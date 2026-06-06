@@ -10,91 +10,52 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - app
-      - app1
-      - app2
-      - app3
-      - app4
-      - app5
-      - app6
-      - app7
-    restart: always
+      app:
+        condition: service_healthy
+      app1:
+        condition: service_healthy
+    networks:
+      - whiteboard-network
 
   app:
     build: .
     image: local-whiteboard:latest
+    container_name: whiteboard-app-1
     environment:
       - INSTANCE_ID=1
+      - NODE_ENV=production
+      - PORT=8000
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/check || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: always
+    networks:
+      - whiteboard-network
 
   app1:
     image: local-whiteboard:latest
-    depends_on:
-      - app
+    container_name: whiteboard-app-2
     environment:
       - INSTANCE_ID=2
+      - NODE_ENV=production
+      - PORT=8000
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/check || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: always
+    networks:
+      - whiteboard-network
 
-  app2:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=3
-    env_file:
-      - .env
-    restart: always
-
-  app3:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=4
-    env_file:
-      - .env
-    restart: always
-
-  app4:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=5
-    env_file:
-      - .env
-    restart: always
-
-  app5:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=6
-    env_file:
-      - .env
-    restart: always
-
-  app6:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=7
-    env_file:
-      - .env
-    restart: always
-
-  app7:
-    image: local-whiteboard:latest
-    depends_on:
-      - app
-    environment:
-      - INSTANCE_ID=8
-    env_file:
-      - .env
-    restart: always
+networks:
+  whiteboard-network:
+    driver: bridge

@@ -13,7 +13,8 @@ export type Tool =
   | "icon"
   | "eyedropper"
   | "sticky"
-  | "highlighter";
+  | "highlighter"
+  | "comment";
 
 export interface Point {
   x: number;
@@ -96,6 +97,12 @@ export interface Element {
   anchors?: Anchor[];
   connectedElementIds?: string[];
   parentId?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+  fontFamily?: string;
+  textAlign?: "left" | "center" | "right" | "justify";
+  padding?: number;
   lastModified?: number;
 }
 

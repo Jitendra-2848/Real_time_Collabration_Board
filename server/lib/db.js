@@ -1,7 +1,6 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { Certificate } from 'crypto';
 dotenv.config();
 
 const { Pool } = pg;
@@ -25,7 +24,7 @@ export const pool = new Pool({
     rejectUnauthorized: true,
     ca: cockroachlabcert,
   } : undefined,
-  max: 20,
+  max: parseInt(process.env.DB_POOL_MAX) || 80,
   idleTimeoutMillis: 80000,
   connectionTimeoutMillis: 10000,
 });
@@ -46,28 +45,30 @@ await pool.query(`
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
   );
 
- CREATE TABLE IF NOT EXISTS rooms (
+  CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     access_mode TEXT NOT NULL DEFAULT 'open',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+  );
 
-CREATE TABLE IF NOT EXISTS room_states (
+  CREATE TABLE IF NOT EXISTS room_states (
     room_id TEXT PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
     state JSONB NOT NULL DEFAULT '[]'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+  );
 
-CREATE TABLE IF NOT EXISTS chat_messages (
+  CREATE TABLE IF NOT EXISTS chat_messages (
     id BIGSERIAL PRIMARY KEY,
     room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     username TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_room_id ON chat_messages(room_id);
 `);
 
 export async function createUser(username, passwordHash) {

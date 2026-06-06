@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import type { Element, Connector, Point, TextStyle, Anchor } from "../lib/types";
-import { getElementBounds } from "../lib/utils";
+import { getElementBounds, findBestAnchors, getConnectorControlPoints } from "../lib/utils";
 
 // Find the closest anchor point on an element to a given point
 export const findClosestAnchor = (
@@ -121,24 +121,16 @@ export const isPointNearConnector = (
   const targetEl = elements.find((el) => el.id === connector.targetId);
   if (!sourceEl || !targetEl) return false;
 
-  const sBounds = getElementBounds(sourceEl);
-  const tBounds = getElementBounds(targetEl);
-  const sx = sBounds.x + sBounds.width / 2;
-  const sy = sBounds.y + sBounds.height / 2;
-  const tx = tBounds.x + tBounds.width / 2;
-  const ty = tBounds.y + tBounds.height / 2;
+  const { s: sourceAnchor, t: targetAnchor } = findBestAnchors(sourceEl, targetEl);
+  const { cp1x, cp1y, cp2x, cp2y } = getConnectorControlPoints(sourceAnchor, targetAnchor);
 
-  // Quadratic bezier midpoint curve
-  const midX = (sx + tx) / 2 + Math.abs(tx - sx) * 0.1;
-  const midY = (sy + ty) / 2 + Math.abs(ty - sy) * 0.1;
-
-  // Sample points along the curve
-  const steps = 20;
+  // Sample points along the cubic bezier curve
+  const steps = 30;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const inv = 1 - t;
-    const cx = inv * inv * sx + 2 * inv * t * midX + t * t * tx;
-    const cy = inv * inv * sy + 2 * inv * t * midY + t * t * ty;
+    const cx = inv*inv*inv*sourceAnchor.x + 3*inv*inv*t*cp1x + 3*inv*t*t*cp2x + t*t*t*targetAnchor.x;
+    const cy = inv*inv*inv*sourceAnchor.y + 3*inv*inv*t*cp1y + 3*inv*t*t*cp2y + t*t*t*targetAnchor.y;
     if (Math.hypot(px - cx, py - cy) < threshold) return true;
   }
 

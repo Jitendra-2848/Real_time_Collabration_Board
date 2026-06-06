@@ -8,17 +8,38 @@ console.log('[Server] Starting up...');
 console.log('[Server] NODE_ENV:', process.env.NODE_ENV || 'not set');
 console.log('[Server] PORT:', process.env.PORT || 8000);
 
-app.use(cors());
-app.use(express.json());
+import rateLimit from 'express-rate-limit';
 
-// Request logging middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+
+// Request logging middleware - silenced in production (L1)
 app.use((req, res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.url}`);
+  if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === '1') {
+    console.log(`[HTTP] ${req.method} ${req.url}`);
+  }
   next();
 });
 
-app.use('/auth', authRoutes);
-app.use('/rooms', roomsRoutes);
+// Rate limiting (C3)
+const standardLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again later.' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login or registration attempts, please try again after 15 minutes.' }
+});
+
+app.use('/auth', authLimiter, authRoutes);
+app.use('/rooms', standardLimiter, roomsRoutes);
 
 const port = process.env.PORT || 8000;
 
@@ -54,3 +75,42 @@ process.on('uncaughtException', (err) => {
   console.error('[Server] ⚠️  Uncaught Exception:', err.message || err);
   console.error(err.stack || err);
 });
+
+// Graceful shutdown handling (M5)
+const gracefulShutdown = (signal) => {
+  console.log(`\n[Server] 🛑 Received ${signal}, starting graceful shutdown...`);
+  
+  // Stop accepting new connections
+  server.close(async () => {
+    console.log('[Server] HTTP/WS server closed.');
+    
+    try {
+      const { pool } = await import('./lib/db.js');
+      await pool.end();
+      console.log('[Server] Postgres connection pool ended.');
+    } catch (err) {
+      console.error('[Server] Error closing Postgres pool:', err.message);
+    }
+    
+    try {
+      const { pubClient, subClient } = await import('./lib/redis.js');
+      await pubClient.quit();
+      await subClient.quit();
+      console.log('[Server] Redis connections closed.');
+    } catch (err) {
+      console.error('[Server] Error closing Redis clients:', err.message);
+    }
+    
+    console.log('[Server] Graceful shutdown completed. Exiting.');
+    process.exit(0);
+  });
+
+  // Bounded timeout to force shutdown if drainage stalls
+  setTimeout(() => {
+    console.error('[Server] Force exiting due to shutdown timeout.');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

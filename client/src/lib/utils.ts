@@ -87,3 +87,77 @@ export const getElementBounds = (el: Element) => {
     }
     return { x: el.width < 0 ? el.x + el.width : el.x, y: el.height < 0 ? el.y + el.height : el.y, width: Math.abs(el.width), height: Math.abs(el.height) };
   };
+
+export const getEdgeAnchors = (el: Element) => {
+  if (el.tool === "line" || el.tool === "arrow") {
+    return [
+      { x: el.x, y: el.y, side: "start" as const },
+      { x: el.x + el.width, y: el.y + el.height, side: "end" as const },
+    ];
+  }
+  
+  const bx = el.width < 0 ? el.x + el.width : el.x;
+  const by = el.height < 0 ? el.y + el.height : el.y;
+  const bw = Math.abs(el.width);
+  const bh = Math.abs(el.height);
+  const cx = bx + bw / 2;
+  const cy = by + bh / 2;
+  
+  return [
+    { x: cx, y: by, side: "top" as const },
+    { x: cx, y: by + bh, side: "bottom" as const },
+    { x: bx, y: cy, side: "left" as const },
+    { x: bx + bw, y: cy, side: "right" as const },
+  ];
+};
+
+export const findBestAnchors = (source: Element, target: Element) => {
+  const sAnchors = getEdgeAnchors(source);
+  const tAnchors = getEdgeAnchors(target);
+  let best = { s: sAnchors[0], t: tAnchors[0], dist: Infinity };
+  
+  for (const sa of sAnchors) {
+    for (const ta of tAnchors) {
+      const dist = Math.hypot(sa.x - ta.x, sa.y - ta.y);
+      if (dist < best.dist) {
+        best = { s: sa, t: ta, dist };
+      }
+    }
+  }
+  
+  return best;
+};
+
+export const getConnectorControlPoints = (sourceAnchor: { x: number, y: number, side: string }, targetAnchor: { x: number, y: number, side: string }) => {
+  const sourceX = sourceAnchor.x;
+  const sourceY = sourceAnchor.y;
+  const targetX = targetAnchor.x;
+  const targetY = targetAnchor.y;
+  
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const dist = Math.hypot(dx, dy);
+  
+  let cp1x = sourceX;
+  let cp1y = sourceY;
+  let cp2x = targetX;
+  let cp2y = targetY;
+  
+  const forceMag = Math.max(dist * 0.4, 40); 
+
+  if (sourceAnchor.side === "right") cp1x = sourceX + forceMag;
+  else if (sourceAnchor.side === "left") cp1x = sourceX - forceMag;
+  else if (sourceAnchor.side === "bottom") cp1y = sourceY + forceMag;
+  else if (sourceAnchor.side === "top") cp1y = sourceY - forceMag;
+  else if (sourceAnchor.side === "start") { cp1x = sourceX + (dx * 0.3); cp1y = sourceY + (dy * 0.3); }
+  else if (sourceAnchor.side === "end") { cp1x = sourceX - (dx * 0.3); cp1y = sourceY - (dy * 0.3); }
+
+  if (targetAnchor.side === "right") cp2x = targetX + forceMag;
+  else if (targetAnchor.side === "left") cp2x = targetX - forceMag;
+  else if (targetAnchor.side === "bottom") cp2y = targetY + forceMag;
+  else if (targetAnchor.side === "top") cp2y = targetY - forceMag;
+  else if (targetAnchor.side === "start") { cp2x = targetX + (dx * 0.3); cp2y = targetY + (dy * 0.3); }
+  else if (targetAnchor.side === "end") { cp2x = targetX - (dx * 0.3); cp2y = targetY - (dy * 0.3); }
+
+  return { cp1x, cp1y, cp2x, cp2y };
+};

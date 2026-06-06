@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { parseDiagramCode } from "../lib/diagramParser";
 import type { Element, Connector } from "../lib/types";
 import { Wand2, Info, BookOpen, Layers, Play } from "lucide-react";
+import toast from "react-hot-toast";
 
 interface Props {
   onGenerate: (elements: Element[], connectors: Connector[]) => void;
@@ -116,8 +117,9 @@ Process B > End: Complete task B
     try {
       const { elements, connectors } = parseDiagramCode(code);
       onGenerate(elements, connectors);
+      toast.success("Diagram generated successfully!");
     } catch (err: any) {
-      alert(`Parsing failed: ${err.message || err}`);
+      toast.error(`Parsing failed: ${err.message || err}`);
     }
   };
 

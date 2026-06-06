@@ -1,4 +1,5 @@
 import type { Element, Connector, TextStyle, ReshapeHandle, Point } from "./types";
+import { getEdgeAnchors, findBestAnchors, getConnectorControlPoints } from "./utils";
 
 // =========================================================
 // 1. GRID DRAWING
@@ -14,18 +15,33 @@ export const drawGrid = (
 ) => {
   const gridSize = 20;
   ctx.save();
+  ctx.translate(pan.x, pan.y);
+  ctx.scale(zoom, zoom);
+
   ctx.strokeStyle = bgTheme === "dark-grid" ? "#333355" : "#e0e0e0";
   ctx.lineWidth = 1 / zoom;
-  const startX = Math.floor((-pan.x / zoom) / gridSize) * gridSize;
-  const startY = Math.floor((-pan.y / zoom) / gridSize) * gridSize;
-  const endX = startX + width / zoom + gridSize;
-  const endY = startY + height / zoom + gridSize;
+
+  // Dynamically scale the grid step size to prevent lag when zoomed out
+  let currentGridSize = gridSize;
+  if (zoom < 0.15) {
+    currentGridSize = gridSize * 10;
+  } else if (zoom < 0.4) {
+    currentGridSize = gridSize * 5;
+  } else if (zoom < 0.7) {
+    currentGridSize = gridSize * 2;
+  }
+
+  const startX = Math.floor((-pan.x / zoom) / currentGridSize) * currentGridSize;
+  const startY = Math.floor((-pan.y / zoom) / currentGridSize) * currentGridSize;
+  const endX = startX + width / zoom + currentGridSize;
+  const endY = startY + height / zoom + currentGridSize;
+
   ctx.beginPath();
-  for (let x = startX; x < endX; x += gridSize) { 
+  for (let x = startX; x < endX; x += currentGridSize) { 
     ctx.moveTo(x, startY); 
     ctx.lineTo(x, endY); 
   }
-  for (let y = startY; y < endY; y += gridSize) { 
+  for (let y = startY; y < endY; y += currentGridSize) { 
     ctx.moveTo(startX, y); 
     ctx.lineTo(endX, y); 
   }
@@ -157,7 +173,14 @@ const drawInternalIconAndText = (
     el.svgPaths!.forEach((pathStr) => drawSvgElement(ctx, pathStr));
     ctx.restore();
   } else if (text) {
-    ctx.fillText(text, x + w / 2, y + h / 2);
+    const lines = text.split("\n").flatMap(line => wrapText(ctx, line, w - 16));
+    const fontSize = 13;
+    const lineHeight = fontSize * 1.25;
+    const totalTextHeight = lines.length * lineHeight;
+    const startY = y + (h - totalTextHeight) / 2 + lineHeight / 2;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, x + w / 2, startY + i * lineHeight);
+    });
   }
 
   ctx.restore();
@@ -568,46 +591,6 @@ const drawIcon = (
 // 4. CONNECTOR ROUTING PHYSICS
 // =========================================================
 
-const getEdgeAnchors = (el: Element) => {
-  if (el.tool === "line" || el.tool === "arrow") {
-    return [
-      { x: el.x, y: el.y, side: "start" as const },
-      { x: el.x + el.width, y: el.y + el.height, side: "end" as const },
-    ];
-  }
-  
-  const bx = el.width < 0 ? el.x + el.width : el.x;
-  const by = el.height < 0 ? el.y + el.height : el.y;
-  const bw = Math.abs(el.width);
-  const bh = Math.abs(el.height);
-  const cx = bx + bw / 2;
-  const cy = by + bh / 2;
-  
-  return [
-    { x: cx, y: by, side: "top" as const },
-    { x: cx, y: by + bh, side: "bottom" as const },
-    { x: bx, y: cy, side: "left" as const },
-    { x: bx + bw, y: cy, side: "right" as const },
-  ];
-};
-
-const findBestAnchors = (source: Element, target: Element) => {
-  const sAnchors = getEdgeAnchors(source);
-  const tAnchors = getEdgeAnchors(target);
-  let best = { s: sAnchors[0], t: tAnchors[0], dist: Infinity };
-  
-  for (const sa of sAnchors) {
-    for (const ta of tAnchors) {
-      const dist = Math.hypot(sa.x - ta.x, sa.y - ta.y);
-      if (dist < best.dist) {
-        best = { s: sa, t: ta, dist };
-      }
-    }
-  }
-  
-  return best;
-};
-
 export const renderConnector = (
   ctx: CanvasRenderingContext2D,
   sourceEl: Element,
@@ -637,49 +620,7 @@ export const renderConnector = (
     ctx.setLineDash([]);
   }
 
-  const dx = targetX - sourceX;
-  const dy = targetY - sourceY;
-  const dist = Math.hypot(dx, dy);
-  
-  let cp1x = sourceX;
-  let cp1y = sourceY;
-  let cp2x = targetX;
-  let cp2y = targetY;
-  
-  const forceMag = Math.max(dist * 0.4, 40); 
-
-  // Calculate control points based on anchor sides
-  if (sourceAnchor.side === "right") {
-    cp1x = sourceX + forceMag;
-  } else if (sourceAnchor.side === "left") {
-    cp1x = sourceX - forceMag;
-  } else if (sourceAnchor.side === "bottom") {
-    cp1y = sourceY + forceMag;
-  } else if (sourceAnchor.side === "top") {
-    cp1y = sourceY - forceMag;
-  } else if (sourceAnchor.side === "start") { 
-    cp1x = sourceX + (dx * 0.3); 
-    cp1y = sourceY + (dy * 0.3); 
-  } else if (sourceAnchor.side === "end") { 
-    cp1x = sourceX - (dx * 0.3); 
-    cp1y = sourceY - (dy * 0.3); 
-  }
-
-  if (targetAnchor.side === "right") {
-    cp2x = targetX + forceMag;
-  } else if (targetAnchor.side === "left") {
-    cp2x = targetX - forceMag;
-  } else if (targetAnchor.side === "bottom") {
-    cp2y = targetY + forceMag;
-  } else if (targetAnchor.side === "top") {
-    cp2y = targetY - forceMag;
-  } else if (targetAnchor.side === "start") { 
-    cp2x = targetX + (dx * 0.3); 
-    cp2y = targetY + (dy * 0.3); 
-  } else if (targetAnchor.side === "end") { 
-    cp2x = targetX - (dx * 0.3); 
-    cp2y = targetY - (dy * 0.3); 
-  }
+  const { cp1x, cp1y, cp2x, cp2y } = getConnectorControlPoints(sourceAnchor, targetAnchor);
 
   // Draw bezier curve
   ctx.beginPath();
@@ -747,6 +688,33 @@ export const renderConnector = (
 
     ctx.fillStyle = connector.color || "#1e293b";
     ctx.fillText(connector.label, bx, by);
+    ctx.restore();
+  }
+
+  if (connector.isSelected) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(59, 130, 246, 0.25)";
+    ctx.lineWidth = (connector.strokeWidth || 2) + 8;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(sourceX, sourceY);
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, targetX, targetY);
+    ctx.stroke();
+
+    ctx.fillStyle = "#3b82f6";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+
+    ctx.beginPath();
+    ctx.arc(sourceX, sourceY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(targetX, targetY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
   }
   
