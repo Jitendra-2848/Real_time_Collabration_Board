@@ -1195,7 +1195,9 @@ export const App = () => {
     }
   };
 
-  const handleDoubleClick = (e: React.MouseEvent) => {};
+  const handleDoubleClick = () => {
+  
+};
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();

@@ -1,5 +1,5 @@
 import type { Element, Connector, TextStyle, ReshapeHandle, Point } from "./types";
-import { getEdgeAnchors, findBestAnchors, getConnectorControlPoints } from "./utils";
+import { findBestAnchors, getConnectorControlPoints } from "./utils";
 
 // =========================================================
 // 1. GRID DRAWING
