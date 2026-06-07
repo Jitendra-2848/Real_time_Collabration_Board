@@ -15,7 +15,7 @@ export const screenToCanvas = (
   };
 };
 
-export const isPointInElement = (x: number, y: number, el: Element): boolean => {
+export const isPointInElementSolid = (x: number, y: number, el: Element): boolean => {
   if (el.tool === "pen" && el.points) {
     return el.points.some(p => 
       Math.hypot(p.x - x, p.y - y) < 10
@@ -44,6 +44,18 @@ export const isPointInElement = (x: number, y: number, el: Element): boolean => 
       return nearLeft || nearRight || nearTop || nearBottom || nearText;
     }
     return true;
+  }
+  return false;
+};
+
+export const isPointInElement = (x: number, y: number, el: Element): boolean => {
+  if (isPointInElementSolid(x, y, el)) return true;
+  if (el.fillColor === "transparent" && el.isSelected) {
+    const minX = Math.min(el.x, el.x + el.width);
+    const maxX = Math.max(el.x, el.x + el.width);
+    const minY = Math.min(el.y, el.y + el.height);
+    const maxY = Math.max(el.y, el.y + el.height);
+    return x >= minX && x <= maxX && y >= minY && y <= maxY;
   }
   return false;
 };

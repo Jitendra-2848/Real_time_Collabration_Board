@@ -13,7 +13,6 @@ export const KEY_TO_TOOL: Record<string, Tool> = {
   y: "cylinder",
   l: "line",
   a: "arrow",
-  t: "text",
   e: "eraser",
   i: "icon",
 };

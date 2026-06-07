@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   MousePointer, Hand, Pencil, Square, Circle,
-  Minus, ArrowUpRight, Type, Eraser, Box, Diamond,
+  Minus, ArrowUpRight, Eraser, Box, Diamond,
   ChevronLeft, ChevronRight, MessageSquare,
   Palette
 } from "lucide-react";
@@ -98,7 +98,6 @@ export const ToolSidebar: React.FC<Props> = ({
   ];
 
   const utilityTools: { id: Tool; icon: React.ReactNode; label: string }[] = [
-    { id: "text", icon: <Type size={18} />, label: "Text (T)" },
     { id: "eraser", icon: <Eraser size={18} />, label: "Eraser (E)" },
     { id: "comment", icon: <MessageSquare size={18} />, label: "Comment" },
   ];

@@ -16,13 +16,15 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { ZoomControls } from "./components/ZoomControls";
 import { DiagramPanel } from "./components/DiagramPanel";
-import type { Element, Point, Guide, Comment, Connector, FontDrawStyle, ReshapeHandle, TextElement } from "./lib/types";
-import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
+import type { Element, Point, Guide, Comment, Connector, FontDrawStyle, ReshapeHandle, TextElement, TextStyle } from "./lib/types";
+import { screenToCanvas, isPointInElement, isPointInElementSolid, distanceToSegment } from "./lib/utils";
+import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
 
 import { useHistory } from "./hooks/useHistory";
 import { useUI } from "./hooks/useUI";
 import { useDrawingStyle } from "./hooks/useDrawingStyle";
 import { useSocket } from "./hooks/useSocket";
+import { setApiAuthToken, onApiTokenRefreshed, refreshAccessToken, logoutUser } from "./lib/api";
 
 import * as ExportService from "./services/exportService";
 import * as AlignmentService from "./services/alignmentService";
@@ -87,6 +89,63 @@ export const App = () => {
     setCaretIndex(text.length);
   };
 
+  const isInteractingWithFormattingBar = useRef(false);
+
+  const getEditingProperties = () => {
+    const editingTextElement = textElements.find(el => el.id === editingTextElementId);
+    if (editingTextElement) {
+      return {
+        color: editingTextElement.style.color || "#000000",
+        fontSize: editingTextElement.style.fontSize || 16,
+        fontFamily: editingTextElement.style.fontFamily || "Inter",
+        bold: editingTextElement.style.bold || false,
+        italic: editingTextElement.style.italic || false,
+        align: editingTextElement.style.align || "left",
+        lineHeight: editingTextElement.style.lineHeight || 1.2,
+      };
+    }
+    const editingElement = elements.find(el => el.id === editingElementId);
+    if (editingElement) {
+      return {
+        color: editingElement.color || "#000000",
+        fontSize: editingElement.fontSize || 16,
+        fontFamily: editingElement.fontFamily || "Inter",
+        bold: editingElement.bold || false,
+        italic: editingElement.italic || false,
+        align: editingElement.textAlign || "left",
+        lineHeight: editingElement.lineHeight || 1.2,
+      };
+    }
+    return null;
+  };
+
+  const updateEditingProperties = (styleUpdates: Partial<TextStyle>) => {
+    if (editingTextElementId) {
+      setTextElements(prev => prev.map(el => {
+        if (el.id === editingTextElementId) {
+          return { ...el, style: { ...el.style, ...styleUpdates } };
+        }
+        return el;
+      }));
+    } else if (editingElementId) {
+      const elementUpdates: Partial<Element> = {};
+      if (styleUpdates.fontSize !== undefined) elementUpdates.fontSize = styleUpdates.fontSize;
+      if (styleUpdates.fontFamily !== undefined) elementUpdates.fontFamily = styleUpdates.fontFamily;
+      if (styleUpdates.color !== undefined) elementUpdates.color = styleUpdates.color;
+      if (styleUpdates.bold !== undefined) elementUpdates.bold = styleUpdates.bold;
+      if (styleUpdates.italic !== undefined) elementUpdates.italic = styleUpdates.italic;
+      if (styleUpdates.align !== undefined) elementUpdates.textAlign = styleUpdates.align as any;
+      if (styleUpdates.lineHeight !== undefined) elementUpdates.lineHeight = styleUpdates.lineHeight;
+
+      const prevEl = elements.find(el => el.id === editingElementId);
+      if (prevEl) {
+        const nextEl = { ...prevEl, ...elementUpdates };
+        setElements(prev => prev.map(el => el.id === editingElementId ? nextEl : el));
+        updateElement(nextEl);
+      }
+    }
+  };
+
   useEffect(() => {
     if (editingElementId || editingTextElementId) {
       const focusInput = () => {
@@ -103,30 +162,48 @@ export const App = () => {
   }, [editingElementId, editingTextElementId]);
 
   useEffect(() => {
-    const handleDocumentClick = (e: MouseEvent) => {
-      if ((editingElementId || editingTextElementId) && hiddenInputRef.current) {
-        const target = e.target as HTMLElement;
-        if (canvasRef.current?.contains(target) || target === document.body) {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
-            let clickedSelf = false;
-            if (editingElementId) {
-              const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
-              if (clicked && clicked.id === editingElementId) clickedSelf = true;
-            } else if (editingTextElementId) {
-              const clicked = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
-              if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
-            }
-            if (clickedSelf) {
-              hiddenInputRef.current.focus();
-            }
-          }
+    const handleDocumentMouseDown = (e: MouseEvent) => {
+      if (!editingElementId && !editingTextElementId) return;
+
+      const target = e.target as HTMLElement;
+      const formattingBar = document.getElementById("text-formatting-bar");
+      
+      // 1. Check if clicked inside formatting bar
+      if (formattingBar && (formattingBar === target || formattingBar.contains(target))) {
+        isInteractingWithFormattingBar.current = true;
+        return;
+      }
+
+      // 2. Check if clicked self (the active editing text/shape)
+      const canvas = canvasRef.current;
+      if (canvas && (canvas === target || canvas.contains(target))) {
+        const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
+        let clickedSelf = false;
+        
+        if (editingElementId) {
+          const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+          if (clicked && clicked.id === editingElementId) clickedSelf = true;
+        } else if (editingTextElementId) {
+          const clicked = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+          if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
+        }
+
+        if (clickedSelf) {
+          isInteractingWithFormattingBar.current = true;
+          // refocus textarea in case focus is lost
+          setTimeout(() => {
+            hiddenInputRef.current?.focus();
+          }, 0);
+          return;
         }
       }
+
+      // 3. Clicked outside (canvas background, other elements, formatting bar exterior)
+      isInteractingWithFormattingBar.current = false;
     };
-    document.addEventListener("mousedown", handleDocumentClick);
-    return () => document.removeEventListener("mousedown", handleDocumentClick);
+
+    document.addEventListener("mousedown", handleDocumentMouseDown, true); // capture phase
+    return () => document.removeEventListener("mousedown", handleDocumentMouseDown, true);
   }, [editingElementId, editingTextElementId, elements, textElements, pan, zoom]);
 
   const clipboardRef = useRef<Element[]>([]);
@@ -449,10 +526,61 @@ export const App = () => {
     setAuthToken(token);
     localStorage.setItem("collab-auth", JSON.stringify({ user, token }));
   };
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
     setUser(null); setAuthToken(null); setCurrentRoom(null);
     localStorage.removeItem("collab-auth"); localStorage.removeItem("collab-room");
   };
+
+  useEffect(() => {
+    setApiAuthToken(authToken);
+  }, [authToken]);
+
+  useEffect(() => {
+    onApiTokenRefreshed((newToken) => {
+      setAuthToken(newToken);
+      if (user) {
+        localStorage.setItem("collab-auth", JSON.stringify({ user, token: newToken }));
+      }
+    });
+  }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    const userIdStr = params.get("userId");
+    const username = params.get("username");
+    const error = params.get("error");
+
+    if (error) {
+      toast.error(`Authentication failed: ${error}`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (token && userIdStr && username) {
+      const userId = parseInt(userIdStr, 10);
+      handleAuthSuccess({ id: userId, username }, token);
+      toast.success("Successfully logged in via Google!");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await refreshAccessToken();
+        if (result && result.token) {
+          handleAuthSuccess(user || { id: 0, username: "" }, result.token);
+        }
+      } catch (err) {
+        console.error("Auto refresh failed", err);
+      }
+    }, 10 * 60 * 1000); // 10 minutes
+    return () => clearInterval(interval);
+  }, [authToken, user]);
   const handleJoinRoom = (roomId: string | number, roomName: string) => {
     setCurrentRoom({ id: roomId, name: roomName });
     localStorage.setItem("collab-room", JSON.stringify({ id: roomId, name: roomName }));
@@ -913,7 +1041,7 @@ export const App = () => {
             }
           }
         } else {
-          keep = !isPointInElement(point.x, point.y, el);
+          keep = !isPointInElementSolid(point.x, point.y, el);
         }
         if (!keep) {
           deletedIds.push(el.id);
@@ -966,7 +1094,10 @@ export const App = () => {
     }
 
     if (ui.selectedTool === "arrow") {
-      const clickedShape = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      let clickedShape = [...elements].reverse().find(el => isPointInElementSolid(point.x, point.y, el));
+      if (!clickedShape) {
+        clickedShape = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      }
       const clickedText = clickedShape ? null : [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
       const clicked = clickedShape || clickedText;
       if (clicked) {
@@ -1123,13 +1254,16 @@ export const App = () => {
         return;
       }
 
-      const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      let clicked = [...elements].reverse().find(el => isPointInElementSolid(point.x, point.y, el));
+      if (!clicked) {
+        clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      }
       if (clicked) {
         setConnectors(prev => prev.map(c => ({ ...c, isSelected: false })));
         setTextElements(textElements.map(el => ({ ...el, isSelected: false })));
         const shift = e.shiftKey;
         const nextElements = elements.map(el =>
-          el.id === clicked.id
+          el.id === clicked!.id
             ? { ...el, isSelected: shift ? !el.isSelected : true }
             : shift ? el : { ...el, isSelected: false }
         );
@@ -1251,7 +1385,7 @@ export const App = () => {
             }
           }
         } else {
-          keep = !isPointInElement(point.x, point.y, el);
+          keep = !isPointInElementSolid(point.x, point.y, el);
         }
         if (!keep) {
           deletedIds.push(el.id);
@@ -1296,11 +1430,18 @@ export const App = () => {
         })
       );
     } else if (ui.action === "connecting" && currentId.current) {
-      const hoveredShape = [...elements].reverse().find((el) =>
+      let hoveredShape = [...elements].reverse().find((el) =>
         el.id !== currentId.current &&
         el.id !== connectionOrigin.current?.elementId &&
-        isPointInElement(point.x, point.y, el)
+        isPointInElementSolid(point.x, point.y, el)
       );
+      if (!hoveredShape) {
+        hoveredShape = [...elements].reverse().find((el) =>
+          el.id !== currentId.current &&
+          el.id !== connectionOrigin.current?.elementId &&
+          isPointInElement(point.x, point.y, el)
+        );
+      }
       const hoveredText = hoveredShape ? null : [...textElements].reverse().find((el) =>
         el.id !== currentId.current &&
         el.id !== connectionOrigin.current?.elementId &&
@@ -1471,7 +1612,7 @@ export const App = () => {
     }
     
     // Check regular elements
-    const clickedElement = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+    const clickedElement = [...elements].reverse().find(el => isPointInElementSolid(point.x, point.y, el));
     if (clickedElement) {
       if (editingElementId || editingTextElementId) {
         if (editingElementId) handleTextBlurEvent();
@@ -1876,14 +2017,21 @@ export const App = () => {
             setCaretIndex((e.target as HTMLTextAreaElement).selectionStart || 0);
           }}
           onBlur={() => {
-            if (editingElementId) {
-              handleTextBlurEvent();
-            } else if (editingTextElementId) {
-              const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
-              setTextElements(nextTextElements);
-              setEditingTextElementId(null);
-              setEditingTextElementText("");
-            }
+            setTimeout(() => {
+              if (isInteractingWithFormattingBar.current) {
+                hiddenInputRef.current?.focus();
+                isInteractingWithFormattingBar.current = false;
+                return;
+              }
+              if (editingElementId) {
+                handleTextBlurEvent();
+              } else if (editingTextElementId) {
+                const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
+                setTextElements(nextTextElements);
+                setEditingTextElementId(null);
+                setEditingTextElementText("");
+              }
+            }, 150);
           }}
           onKeyDown={e => {
             e.stopPropagation();
@@ -1909,6 +2057,168 @@ export const App = () => {
           }}
         />
       )}
+
+      {/* Floating Text Formatting Bar */}
+      {(editingElementId || editingTextElementId) && (() => {
+        const props = getEditingProperties();
+        if (!props) return null;
+        return (
+          <div 
+            id="text-formatting-bar"
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[400] bg-white/95 border border-slate-200/80 shadow-2xl rounded-2xl p-2.5 px-4 flex items-center gap-3 backdrop-blur-md transition-all duration-300 hover:shadow-3xl"
+            onMouseDown={() => {
+              isInteractingWithFormattingBar.current = true;
+            }}
+            onMouseLeave={() => {
+              isInteractingWithFormattingBar.current = false;
+            }}
+          >
+            {/* Font Family Dropdown */}
+            <select
+              value={props.fontFamily}
+              onMouseDown={() => {
+                isInteractingWithFormattingBar.current = true;
+              }}
+              onChange={(e) => {
+                isInteractingWithFormattingBar.current = true;
+                updateEditingProperties({ fontFamily: e.target.value });
+                setTimeout(() => {
+                  hiddenInputRef.current?.focus();
+                  isInteractingWithFormattingBar.current = false;
+                }, 50);
+              }}
+              className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 focus:outline-none focus:border-slate-400 font-semibold text-slate-700 cursor-pointer"
+            >
+              <option value="Inter">Inter (Sans)</option>
+              <option value="Caveat">Caveat (Handwriting)</option>
+              <option value="monospace">Monospace</option>
+              <option value="Georgia">Georgia (Serif)</option>
+              <option value="Courier New">Courier</option>
+            </select>
+
+            <div className="h-5 w-[1px] bg-slate-200" />
+
+            {/* Font Size Input */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Size</span>
+              <input
+                type="number"
+                value={props.fontSize}
+                onMouseDown={() => {
+                  isInteractingWithFormattingBar.current = true;
+                }}
+                onChange={(e) => {
+                  isInteractingWithFormattingBar.current = true;
+                  updateEditingProperties({ fontSize: Number(e.target.value) });
+                }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    hiddenInputRef.current?.focus();
+                  }, 50);
+                }}
+                className="w-12 border border-slate-200 rounded-xl px-2 py-1.5 focus:border-slate-400 focus:outline-none text-xs font-semibold text-slate-700 bg-slate-50/50 text-center"
+                min={8}
+                max={120}
+              />
+            </div>
+
+            <div className="h-5 w-[1px] bg-slate-200" />
+
+            {/* Bold Toggle */}
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => updateEditingProperties({ bold: !props.bold })}
+              className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                props.bold
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+              title="Bold"
+            >
+              <Bold size={16} />
+            </button>
+
+            {/* Italic Toggle */}
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => updateEditingProperties({ italic: !props.italic })}
+              className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                props.italic
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+              title="Italic"
+            >
+              <Italic size={16} />
+            </button>
+
+            <div className="h-5 w-[1px] bg-slate-200" />
+
+            {/* Alignments */}
+            <div className="flex items-center gap-0.5">
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => updateEditingProperties({ align: "left" })}
+                className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                  props.align === "left"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Align Left"
+              >
+                <AlignLeft size={16} />
+              </button>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => updateEditingProperties({ align: "center" })}
+                className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                  props.align === "center"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Align Center"
+              >
+                <AlignCenter size={16} />
+              </button>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => updateEditingProperties({ align: "right" })}
+                className={`p-1.5 rounded-lg transition-colors flex items-center justify-center ${
+                  props.align === "right"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Align Right"
+              >
+                <AlignRight size={16} />
+              </button>
+            </div>
+
+            <div className="h-5 w-[1px] bg-slate-200" />
+
+            {/* Color Selector */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={props.color}
+                onMouseDown={() => {
+                  isInteractingWithFormattingBar.current = true;
+                }}
+                onChange={(e) => {
+                  isInteractingWithFormattingBar.current = true;
+                  updateEditingProperties({ color: e.target.value });
+                  setTimeout(() => {
+                    hiddenInputRef.current?.focus();
+                    isInteractingWithFormattingBar.current = false;
+                  }, 50);
+                }}
+                className="w-7 h-7 border border-slate-200 rounded-lg cursor-pointer p-0 bg-white"
+                title="Text Color"
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Context menu */}
       {ui.contextMenu && (

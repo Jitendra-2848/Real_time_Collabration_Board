@@ -1,4 +1,5 @@
-
+import dotenv from 'dotenv';
+dotenv.config();
 import cors from 'cors';
 import { app, server, express, initializeSocket } from './socket/socket.js';
 import authRoutes from './routes/auth.js';
@@ -7,7 +8,10 @@ import roomsRoutes from './routes/rooms.js';
 console.log('[Server] Starting up...');
 console.log('[Server] NODE_ENV:', process.env.NODE_ENV || 'not set');
 console.log('[Server] PORT:', process.env.PORT || 8000);
-
+// console.log('google client' , process.env.GOOGLE_CLIENT_ID);
+console.log('[Server] PORT:2', process.env.PORT || 800);
+console.log("Client ID:", process.env.GOOGLE_CLIENT_ID || "hello"); // Add this temporarily to check
+console.log("Client Secret:", process.env.GOOGLE_CLIENT_SECRET); // Add this temporarily to check
 import rateLimit from 'express-rate-limit';
 
 app.use(cors());

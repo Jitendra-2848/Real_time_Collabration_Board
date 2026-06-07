@@ -9,7 +9,7 @@ import {
   INSTANCE_ID,
   waitForRedisReady,
 } from '../lib/redis.js';
-import { verifyToken } from '../lib/jwt.js';
+import { verifyAccessToken } from '../lib/jwt.js';
 import {
   findRoomById,
   loadRoomState,
@@ -297,7 +297,7 @@ io.use(async (socket, next) => {
   // 1. Authenticate user
   let user;
   try {
-    user = verifyToken(token);
+    user = verifyAccessToken(token);
     socket.data.user = { id: user.id, username: user.username };
   } catch (err) {
     return next(new Error('INVALID_TOKEN'));
