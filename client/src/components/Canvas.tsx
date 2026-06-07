@@ -1,11 +1,12 @@
-import React, { useRef, useEffect } from "react";
-import type { Element, Point, Guide, Comment, Connector, TextStyle } from "../lib/types";
-import { renderLayers } from "../lib/renderer";
+import React, { useRef, useEffect, useState } from "react";
+import type { Element, Point, Guide, Comment, Connector, TextStyle, TextElement } from "../lib/types";
+import { renderLayers, renderTextElements } from "../lib/renderer";
 import type { CanvasLayers } from "../lib/renderer";
 
 interface Props {
   elements: Element[];
   connectors?: Connector[];
+  textElements?: TextElement[];
   pan: Point;
   zoom: number;
   showGrid: boolean;
@@ -15,6 +16,10 @@ interface Props {
   comments?: Comment[];
   defaultTextStyle?: TextStyle;
   editingElementId?: string | null;
+  editingTextElementId?: string | null;
+  editingText?: string;
+  editingTextElementText?: string;
+  caretIndex?: number;
   connectionPreview?: { sourceId: string; sourceAnchor: string; targetId: string | null; mousePos: Point } | null;
   onMouseDown: (e: React.MouseEvent) => void;
   onMouseMove: (e: React.MouseEvent) => void;
@@ -28,8 +33,8 @@ interface Props {
 }
 
 export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
-  ({ elements, connectors = [], pan, zoom, showGrid, rubberBand, bgTheme = "light-grid", guides = [], comments = [],
-     defaultTextStyle = "rough", editingElementId = null, connectionPreview = null,
+  ({ elements, connectors = [], textElements = [], pan, zoom, showGrid, rubberBand, bgTheme = "light-grid", guides = [], comments = [],
+     defaultTextStyle = "rough", editingElementId = null, editingTextElementId = null, editingText = "", editingTextElementText = "", caretIndex = 0, connectionPreview = null,
      onMouseDown, onMouseMove, onMouseUp, onDoubleClick, onContextMenu,
      onTouchStart, onTouchMove, onTouchEnd, cursor }, ref) => {
 
@@ -37,6 +42,20 @@ export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
     const connLayerRef = useRef<HTMLCanvasElement>(null);
     const nodeLayerRef = useRef<HTMLCanvasElement>(null);
     const overlayLayerRef = useRef<HTMLCanvasElement>(null);
+
+    const [caretVisible, setCaretVisible] = useState(true);
+
+    useEffect(() => {
+      if (!editingElementId && !editingTextElementId) {
+        setCaretVisible(false);
+        return;
+      }
+      setCaretVisible(true);
+      const interval = setInterval(() => {
+        setCaretVisible((v) => !v);
+      }, 500);
+      return () => clearInterval(interval);
+    }, [editingElementId, editingTextElementId]);
 
     useEffect(() => {
       const background = bgLayerRef.current;
@@ -51,8 +70,20 @@ export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
         nodes: nodesLayer,
         overlays: overlay,
       };
-      renderLayers(layers, elements, connectors, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId);
-    }, [elements, connectors, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId]);
+      renderLayers(layers, elements, connectors, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex);
+      
+      // Render text elements on nodes layer
+      if (textElements && textElements.length > 0) {
+        const nodeCtx = nodesLayer.getContext("2d");
+        if (nodeCtx) {
+          nodeCtx.save();
+          nodeCtx.translate(pan.x, pan.y);
+          nodeCtx.scale(zoom, zoom);
+          renderTextElements(nodeCtx, textElements, zoom, defaultTextStyle, editingTextElementId, editingTextElementText, caretVisible, caretIndex);
+          nodeCtx.restore();
+        }
+      }
+    }, [elements, connectors, textElements, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId, editingTextElementId, editingText, editingTextElementText, caretVisible, caretIndex]);
 
     useEffect(() => {
       if (!nodeLayerRef.current) return;

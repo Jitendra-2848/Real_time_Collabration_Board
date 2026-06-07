@@ -1,5 +1,7 @@
-import type { Element, Connector, TextStyle, ReshapeHandle, Point } from "./types";
+import type { Element, Connector, TextStyle, ReshapeHandle, Point, TextElement } from "./types";
 import { findBestAnchors, getConnectorControlPoints } from "./utils";
+import { renderTextElement, wrapTextWithRanges, getCaretCoordinates } from "../handlers/textSystem";
+import type { WrappedLine } from "../handlers/textSystem";
 
 // =========================================================
 // 1. GRID DRAWING
@@ -53,24 +55,6 @@ export const drawGrid = (
 // 2. HELPERS
 // =========================================================
 
-const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
-  if (!text) return [""];
-  const maxW = Math.max(20, maxWidth);
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = words[0] || '';
-  for (let i = 1; i < words.length; i++) {
-    const testLine = `${currentLine} ${words[i]}`;
-    if (ctx.measureText(testLine).width <= maxW) {
-      currentLine = testLine;
-    } else { 
-      lines.push(currentLine); 
-      currentLine = words[i]; 
-    }
-  }
-  lines.push(currentLine);
-  return lines;
-};
 
 const drawSvgElement = (ctx: CanvasRenderingContext2D, d: string) => {
   const path = new Path2D(d); 
@@ -125,9 +109,12 @@ const drawInternalIconAndText = (
   w: number,
   h: number,
   el: Element,
-  defaultTextStyle: TextStyle
+  defaultTextStyle: TextStyle,
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
-  const text = el.text || "";
+  const text = editingText !== undefined ? editingText : (el.text || "");
   const hasIcon = el.svgPaths && el.svgPaths.length > 0 && el.viewBox;
 
   ctx.save();
@@ -172,15 +159,45 @@ const drawInternalIconAndText = (
     ctx.strokeStyle = "transparent";
     el.svgPaths!.forEach((pathStr) => drawSvgElement(ctx, pathStr));
     ctx.restore();
-  } else if (text) {
-    const lines = text.split("\n").flatMap(line => wrapText(ctx, line, w - 16));
+  } else if (text || editingText !== undefined) {
+    const paragraphs = text.split("\n");
+    let currentOffset = 0;
+    const lines: WrappedLine[] = [];
+    paragraphs.forEach(p => {
+      const wrapped = wrapTextWithRanges(ctx, p, w - 16, currentOffset);
+      lines.push(...wrapped);
+      currentOffset += p.length + 1;
+    });
+
     const fontSize = 13;
     const lineHeight = fontSize * 1.25;
     const totalTextHeight = lines.length * lineHeight;
     const startY = y + (h - totalTextHeight) / 2 + lineHeight / 2;
     lines.forEach((line, i) => {
-      ctx.fillText(line, x + w / 2, startY + i * lineHeight);
+      ctx.fillText(line.text, x + w / 2, startY + i * lineHeight);
     });
+
+    if (editingText !== undefined && caretVisible) {
+      const coords = getCaretCoordinates(
+        ctx,
+        lines,
+        caretIndex || 0,
+        fontSize,
+        lineHeight,
+        startY,
+        x + w / 2,
+        "center",
+        8,
+        w
+      );
+
+      ctx.beginPath();
+      ctx.strokeStyle = el.color || "#1e293b";
+      ctx.lineWidth = 2;
+      ctx.moveTo(coords.x + 1, coords.y - fontSize / 2);
+      ctx.lineTo(coords.x + 1, coords.y + fontSize / 2);
+      ctx.stroke();
+    }
   }
 
   ctx.restore();
@@ -193,7 +210,10 @@ const drawRect = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: TextStyle = "rough",
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   applyShapeStyles(ctx, el);
   
@@ -234,7 +254,7 @@ const drawRect = (
   
   if (el.rotation) ctx.restore();
   
-  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle, editingText, caretVisible, caretIndex);
   
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
@@ -255,7 +275,10 @@ const drawEllipse = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: TextStyle = "rough",
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   applyShapeStyles(ctx, el);
   
@@ -276,7 +299,7 @@ const drawEllipse = (
   ctx.shadowOffsetX = 0; 
   ctx.shadowOffsetY = 0;
   
-  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle, editingText, caretVisible, caretIndex);
   
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
@@ -297,7 +320,10 @@ const drawDiamond = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: TextStyle = "rough",
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   applyShapeStyles(ctx, el);
   
@@ -322,7 +348,7 @@ const drawDiamond = (
   ctx.shadowOffsetX = 0; 
   ctx.shadowOffsetY = 0;
 
-  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle);
+  drawInternalIconAndText(ctx, x, y, w, h, el, defaultTextStyle, editingText, caretVisible, caretIndex);
 
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
@@ -339,7 +365,10 @@ const drawCylinder = (
   w: number,
   h: number,
   el: Element,
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: TextStyle = "rough",
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   applyShapeStyles(ctx, el);
 
@@ -391,7 +420,7 @@ const drawCylinder = (
 
   if (el.rotation) ctx.restore();
 
-  drawInternalIconAndText(ctx, x, y + ry, w, h - 2 * ry, el, defaultTextStyle);
+  drawInternalIconAndText(ctx, x, y + ry, w, h - 2 * ry, el, defaultTextStyle, editingText, caretVisible, caretIndex);
 
   if (el.label?.text) {
     applyTextStyle(ctx, 14, el.label.style, defaultTextStyle);
@@ -533,8 +562,12 @@ const drawText = (
   h: number, 
   el: Element, 
   _zoom: number, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: TextStyle = "rough",
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
+  const textVal = editingText !== undefined ? editingText : (el.text || "");
   const targetWidth = Math.max(w, 100);
   const targetHeight = Math.max(h, 24);
   const fontSize = Math.max(16, targetHeight * 0.6);
@@ -545,17 +578,45 @@ const drawText = (
   ctx.textAlign = "left";
   
   const padding = 8;
-  const lines = (el.text || "")
-    .split("\n")
-    .flatMap(line => wrapText(ctx, line, targetWidth - padding * 2));
+  const paragraphs = textVal.split("\n");
+  let currentOffset = 0;
+  const lines: WrappedLine[] = [];
+  paragraphs.forEach(p => {
+    const wrapped = wrapTextWithRanges(ctx, p, targetWidth - padding * 2, currentOffset);
+    lines.push(...wrapped);
+    currentOffset += p.length + 1;
+  });
   
   const lineHeight = fontSize * 1.2;
   const totalTextHeight = lines.length * lineHeight;
   const startY = y + (targetHeight - totalTextHeight) / 2 + lineHeight / 2;
   
   lines.forEach((line, i) => { 
-    ctx.fillText(line, x + padding, startY + i * lineHeight); 
+    ctx.fillText(line.text, x + padding, startY + i * lineHeight); 
   });
+
+  // Render blinking caret/cursor on canvas
+  if (editingText !== undefined && caretVisible) {
+    const coords = getCaretCoordinates(
+      ctx,
+      lines,
+      caretIndex || 0,
+      fontSize,
+      lineHeight,
+      startY,
+      x + padding,
+      "left",
+      padding,
+      targetWidth
+    );
+
+    ctx.beginPath();
+    ctx.strokeStyle = el.color;
+    ctx.lineWidth = 2;
+    ctx.moveTo(coords.x + 1, coords.y - fontSize / 2);
+    ctx.lineTo(coords.x + 1, coords.y + fontSize / 2);
+    ctx.stroke();
+  }
   
   ctx.shadowBlur = 0;
 };
@@ -872,7 +933,10 @@ export const renderElement = (
   el: Element, 
   zoom: number = 1, 
   defaultTextStyle: TextStyle = "rough", 
-  editingElementId?: string | null
+  editingElementId?: string | null,
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   ctx.save();
   
@@ -883,24 +947,23 @@ export const renderElement = (
   
   ctx.globalAlpha = el.opacity ?? 1;
 
-  // FIX: Don't render text element being edited to prevent double rendering
-  if (el.id === editingElementId && el.tool === "text") {
-    ctx.restore();
-    return;
-  }
+  const isEditingThis = el.id === editingElementId;
+  const currentEditingText = isEditingThis ? editingText : undefined;
+  const currentCaretVisible = isEditingThis ? caretVisible : undefined;
+  const currentCaretIndex = isEditingThis ? caretIndex : undefined;
 
   switch (el.tool) {
     case "rect": 
-      drawRect(ctx, x, y, w, h, el, defaultTextStyle); 
+      drawRect(ctx, x, y, w, h, el, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex); 
       break;
     case "circle": 
-      drawEllipse(ctx, x, y, w, h, el, defaultTextStyle); 
+      drawEllipse(ctx, x, y, w, h, el, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex); 
       break;
     case "diamond": 
-      drawDiamond(ctx, x, y, w, h, el, defaultTextStyle); 
+      drawDiamond(ctx, x, y, w, h, el, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex); 
       break;
     case "cylinder": 
-      drawCylinder(ctx, x, y, w, h, el, defaultTextStyle); 
+      drawCylinder(ctx, x, y, w, h, el, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex); 
       break;
     case "arrow": 
       drawArrow(ctx, el, defaultTextStyle); 
@@ -913,7 +976,7 @@ export const renderElement = (
       drawPen(ctx, el); 
       break;
     case "text": 
-      drawText(ctx, x, y, w, h, el, zoom, defaultTextStyle); 
+      drawText(ctx, x, y, w, h, el, zoom, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex); 
       break;
     case "icon": 
       drawIcon(ctx, x, y, w, h, el); 
@@ -984,6 +1047,31 @@ export const getVisibleElements = (
 // 8. LAYERED CANVAS RENDER
 // =========================================================
 
+// =========================================================
+// 9. TEXT ELEMENTS RENDERING
+// =========================================================
+
+export const renderTextElements = (
+  ctx: CanvasRenderingContext2D,
+  textElements: TextElement[],
+  zoom: number = 1,
+  defaultTextStyle: TextStyle = "rough",
+  editingTextElementId?: string | null,
+  editingTextElementText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
+) => {
+  textElements.forEach(textEl => {
+    const isEditingThis = textEl.id === editingTextElementId;
+    const currentEditingText = isEditingThis ? editingTextElementText : undefined;
+    const currentCaretVisible = isEditingThis ? caretVisible : undefined;
+    const currentCaretIndex = isEditingThis ? caretIndex : undefined;
+    ctx.save();
+    renderTextElement(ctx, textEl, zoom, defaultTextStyle, currentEditingText, currentCaretVisible, currentCaretIndex);
+    ctx.restore();
+  });
+};
+
 export interface CanvasLayers {
   background: HTMLCanvasElement; connectors: HTMLCanvasElement;
   nodes: HTMLCanvasElement; overlays: HTMLCanvasElement;
@@ -997,7 +1085,10 @@ export const renderLayers = (
   rubberBand: { x1: number; y1: number; x2: number; y2: number } | null,
   connectionPreview: { sourceId: string; sourceAnchor: string; targetId: string | null; mousePos: Point } | null,
   defaultTextStyle: TextStyle = "rough",
-  editingElementId?: string | null
+  editingElementId?: string | null,
+  editingText?: string,
+  caretVisible?: boolean,
+  caretIndex?: number
 ) => {
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth, h = window.innerHeight;
@@ -1051,7 +1142,7 @@ export const renderLayers = (
     layers.nodes.style.width = `${w}px`; layers.nodes.style.height = `${h}px`;
     nodeCtx.setTransform(dpr, 0, 0, dpr, 0, 0); nodeCtx.clearRect(0, 0, w, h);
     nodeCtx.save(); nodeCtx.translate(pan.x, pan.y); nodeCtx.scale(zoom, zoom);
-    elements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId));
+    elements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex));
     comments.filter(c => !c.resolved).forEach((c, i) => {
       nodeCtx.beginPath(); nodeCtx.arc(c.x, c.y, 10/zoom, 0, Math.PI*2);
       nodeCtx.fillStyle = "#facc15"; nodeCtx.fill();

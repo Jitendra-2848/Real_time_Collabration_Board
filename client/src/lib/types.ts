@@ -39,6 +39,37 @@ export interface Comment {
 
 export type TextStyle = "rough" | "clean" | "mono";
 
+// =========================================================
+// TEXT SYSTEM TYPES
+// =========================================================
+
+export type TextType = "canvas" | "node" | "edge";
+
+export interface TextElement {
+  id: string;
+  type: TextType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+  fontSize: number;
+  fontFamily: string;
+  textAlign: "left" | "center" | "right";
+  textStyle: TextStyle;
+  opacity: number;
+  rotation: number;
+  isSelected: boolean;
+  locked: boolean;
+  // For node text
+  parentId?: string;
+  // For edge text
+  edgeId?: string;
+  edgeOffset?: number; // 0-1 along the edge path
+  edgeDragOffset?: { x: number; y: number }; // Manual drag offset from midpoint
+}
+
 export interface Anchor {
   id: string;
   elementId: string;
@@ -118,6 +149,7 @@ export interface BoardSettings {
 export interface AppState {
   elements: Element[];
   connectors: Connector[];
+  textElements: TextElement[];
   pan: Point;
   zoom: number;
   selectedTool: Tool;

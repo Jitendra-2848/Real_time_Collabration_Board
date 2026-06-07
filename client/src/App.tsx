@@ -16,7 +16,7 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { ZoomControls } from "./components/ZoomControls";
 import { DiagramPanel } from "./components/DiagramPanel";
-import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle } from "./lib/types";
+import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle, TextElement } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
 import { useHistory } from "./hooks/useHistory";
@@ -38,6 +38,11 @@ import { handleKeyDown } from "./handlers/keyboardHandlers";
 import { getReshapeHandleAtPoint } from "./lib/renderer";
 import { handleTextBlur, createTextElement, createStickyNote } from "./handlers/textHandlers";
 import { isLongPress } from "./handlers/touchHandlers";
+import { 
+  createCanvasText, 
+  handleTextBlur as handleTextElementBlur,
+  isPointInTextElement
+} from "./handlers/textSystem";
 
 export const App = () => {
   const { elements, setElements, pushToHistory, updateElementsFromServer, undo, redo, canUndo, canRedo, history, historyIndex } = useHistory([]);
@@ -57,6 +62,68 @@ export const App = () => {
 
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
+  
+  // Text elements state
+  const [textElements, setTextElements] = useState<TextElement[]>([]);
+  const [editingTextElementId, setEditingTextElementId] = useState<string | null>(null);
+  const [editingTextElementText, setEditingTextElementText] = useState("");
+  const [caretIndex, setCaretIndex] = useState(0);
+
+  const startEditingElement = (id: string, text: string) => {
+    setEditingElementId(id);
+    setEditingText(text);
+    originalText.current = text;
+    setCaretIndex(text.length);
+  };
+
+  const startEditingTextElement = (id: string, text: string) => {
+    setEditingTextElementId(id);
+    setEditingTextElementText(text);
+    originalText.current = text;
+    setCaretIndex(text.length);
+  };
+
+  useEffect(() => {
+    if (editingElementId || editingTextElementId) {
+      const focusInput = () => {
+        if (hiddenInputRef.current) {
+          hiddenInputRef.current.focus();
+          const length = hiddenInputRef.current.value.length;
+          hiddenInputRef.current.setSelectionRange(length, length);
+        }
+      };
+      focusInput();
+      const frame = requestAnimationFrame(focusInput);
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [editingElementId, editingTextElementId]);
+
+  useEffect(() => {
+    const handleDocumentClick = (e: MouseEvent) => {
+      if ((editingElementId || editingTextElementId) && hiddenInputRef.current) {
+        const target = e.target as HTMLElement;
+        if (canvasRef.current?.contains(target) || target === document.body) {
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
+            let clickedSelf = false;
+            if (editingElementId) {
+              const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+              if (clicked && clicked.id === editingElementId) clickedSelf = true;
+            } else if (editingTextElementId) {
+              const clicked = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+              if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
+            }
+            if (clickedSelf) {
+              hiddenInputRef.current.focus();
+            }
+          }
+        }
+      }
+    };
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => document.removeEventListener("mousedown", handleDocumentClick);
+  }, [editingElementId, editingTextElementId, elements, textElements, pan, zoom]);
 
   const clipboardRef = useRef<Element[]>([]);
   const [rubberBand, setRubberBand] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -185,7 +252,8 @@ export const App = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeBoardIdRef = useRef(activeBoardId);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hiddenInputRef = useRef<HTMLTextAreaElement>(null);
+  const originalText = useRef("");
   const elementsRef = useRef<Element[]>(elements);
   const connectorsRef = useRef<Connector[]>(connectors);
   const actionStartElements = useRef<Element[] | null>(null);
@@ -713,8 +781,14 @@ export const App = () => {
     const clickedElement = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
 
     if (e.detail === 2) {
-      if (editingElementId) {
-        handleTextBlurEvent();
+      if (editingElementId || editingTextElementId) {
+        if (editingElementId) handleTextBlurEvent();
+        else {
+          const nextTextElements = handleTextElementBlur(editingTextElementId!, editingTextElementText, textElements);
+          setTextElements(nextTextElements);
+          setEditingTextElementId(null);
+          setEditingTextElementText("");
+        }
       }
       if (clickedElement) {
         ui.setSelectedTool('select');
@@ -722,8 +796,7 @@ export const App = () => {
         if (otherSelected.length > 0) {
           handleAutoAttachConnector(clickedElement, otherSelected[0]);
         }
-        setEditingElementId(clickedElement.id);
-        setEditingText(clickedElement.text || '');
+        startEditingElement(clickedElement.id, clickedElement.text || '');
       } else {
         const id = uuid();
         currentId.current = id;
@@ -731,14 +804,23 @@ export const App = () => {
         newEl.textStyle = defaultTextStyle;
         newEl.resizable = true;
         setElements([...elements, { ...newEl, id }]);
-        setEditingElementId(id);
-        setEditingText('');
+        startEditingElement(id, '');
       }
       return;
     }
 
-    if (editingElementId) {
-      handleTextBlurEvent();
+    if (editingElementId || editingTextElementId) {
+      let clickedSelf = false;
+      if (editingElementId) {
+        const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+        if (clicked && clicked.id === editingElementId) clickedSelf = true;
+      } else if (editingTextElementId) {
+        const clicked = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+        if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
+      }
+      if (!clickedSelf) {
+        hiddenInputRef.current?.blur();
+      }
       return;
     }
 
@@ -759,8 +841,8 @@ export const App = () => {
       newEl.textStyle = defaultTextStyle;
       newEl.resizable = true;
       setElements([...elements, newEl]);
-      setEditingElementId(id);
-      setEditingText("");
+      startEditingElement(id, "");
+      ui.setSelectedTool("select");
       return;
     }
     if (ui.selectedTool === "sticky") {
@@ -1195,9 +1277,53 @@ export const App = () => {
     }
   };
 
-  const handleDoubleClick = () => {
-  
-};
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const point = screenToCanvas(e.clientX, e.clientY, canvas, pan, zoom);
+    
+    // Check text elements first (topmost)
+    const clickedTextEl = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+    if (clickedTextEl) {
+      startEditingTextElement(clickedTextEl.id, clickedTextEl.text || '');
+      return;
+    }
+    
+    // Check regular elements
+    const clickedElement = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+    if (clickedElement) {
+      if (editingElementId || editingTextElementId) {
+        if (editingElementId) handleTextBlurEvent();
+        else {
+          const nextTextElements = handleTextElementBlur(editingTextElementId!, editingTextElementText, textElements);
+          setTextElements(nextTextElements);
+          setEditingTextElementId(null);
+          setEditingTextElementText("");
+        }
+      }
+      ui.setSelectedTool('select');
+      const otherSelected = elements.filter(el => el.isSelected && el.id !== clickedElement.id);
+      if (otherSelected.length > 0) {
+        handleAutoAttachConnector(clickedElement, otherSelected[0]);
+      }
+      startEditingElement(clickedElement.id, clickedElement.text || '');
+    } else {
+      if (editingElementId || editingTextElementId) {
+        if (editingElementId) handleTextBlurEvent();
+        else {
+          const nextTextElements = handleTextElementBlur(editingTextElementId!, editingTextElementText, textElements);
+          setTextElements(nextTextElements);
+          setEditingTextElementId(null);
+          setEditingTextElementText("");
+        }
+      }
+      // Create new canvas text on double-click empty space
+      const newTextEl = createCanvasText(point, drawingStyle.strokeColor, drawingStyle.opacity, defaultTextStyle);
+      setTextElements(prev => [...prev, newTextEl]);
+      startEditingTextElement(newTextEl.id, '');
+    }
+  };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1288,30 +1414,6 @@ export const App = () => {
 
   const selCount = getSelectedElements().length;
 
-  const editingElement = editingElementId ? elements.find(el => el.id === editingElementId) : null;
-  const editingElementBounds = editingElement ? getElementBoundsLocal(editingElement) : null;
-  const textareaStyle = editingElement && editingElementBounds ? (
-    editingElement.tool === "text" ? {
-      left: `${editingElementBounds.x * zoom + pan.x}px`,
-      top: `${editingElementBounds.y * zoom + pan.y}px`,
-      width: `${Math.max(editingElementBounds.width * zoom, 120)}px`,
-      minHeight: `${Math.max(editingElementBounds.height * zoom, 36)}px`,
-      fontFamily: defaultTextStyle === "mono" ? "monospace" : "Inter, sans-serif",
-      fontSize: `${Math.max(16, editingElementBounds.height * 0.6)}px`,
-      color: editingElement.color,
-      textAlign: "left" as const,
-    } : {
-      left: `${(editingElementBounds.x + editingElementBounds.width / 2) * zoom + pan.x - Math.max(120, editingElementBounds.width * zoom - 20) / 2}px`,
-      top: `${(editingElementBounds.y + editingElementBounds.height / 2) * zoom + pan.y - Math.max(36, editingElementBounds.height * zoom - 20) / 2}px`,
-      width: `${Math.max(120, editingElementBounds.width * zoom - 20)}px`,
-      minHeight: `${Math.max(36, editingElementBounds.height * zoom - 20)}px`,
-      fontFamily: defaultTextStyle === "mono" ? "monospace" : "Inter, sans-serif",
-      fontSize: `${Math.max(14, Math.min(24, editingElementBounds.height * zoom * 0.15))}px`,
-      color: editingElement.color,
-      textAlign: "center" as const,
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-    }
-  ) : {};
 
   if (!authToken || !user) {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
@@ -1573,28 +1675,55 @@ export const App = () => {
         </div>
       )}
 
-      {/* Text editing overlay */}
-      {editingElementId && editingElement && (
+      {/* Hidden input/textarea for canvas-native text entry */}
+      {(editingElementId || editingTextElementId) && (
         <textarea
-          ref={textareaRef}
+          ref={hiddenInputRef}
           autoFocus
-          value={editingText}
-          onChange={e => setEditingText(e.target.value)}
-          onBlur={handleTextBlurEvent}
+          value={editingElementId ? editingText : editingTextElementText}
+          onChange={e => {
+            const val = e.target.value;
+            if (editingElementId) {
+              setEditingText(val);
+            } else if (editingTextElementId) {
+              setEditingTextElementText(val);
+            }
+            setCaretIndex(e.target.selectionStart || 0);
+          }}
+          onSelect={e => {
+            setCaretIndex((e.target as HTMLTextAreaElement).selectionStart || 0);
+          }}
+          onBlur={() => {
+            if (editingElementId) {
+              handleTextBlurEvent();
+            } else if (editingTextElementId) {
+              const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
+              setTextElements(nextTextElements);
+              setEditingTextElementId(null);
+              setEditingTextElementText("");
+            }
+          }}
           onKeyDown={e => {
             e.stopPropagation();
-            if (e.key === "Escape") { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              if (editingElementId) {
+                setEditingText(originalText.current);
+              } else if (editingTextElementId) {
+                setEditingTextElementText(originalText.current);
+              }
+              hiddenInputRef.current?.blur();
+            }
           }}
-          className="fixed z-[200] border-2 border-blue-500 bg-white p-2 outline-none resize text-base rounded shadow-lg"
           style={{
-            left: textareaStyle.left,
-            top: textareaStyle.top,
-            minWidth: textareaStyle.width,
-            minHeight: textareaStyle.minHeight,
-            fontFamily: textareaStyle.fontFamily,
-            fontSize: textareaStyle.fontSize,
-            color: textareaStyle.color,
-            maxWidth: "400px",
+            position: "absolute",
+            opacity: 0,
+            left: "-9999px",
+            top: "-9999px",
+            width: "0px",
+            height: "0px",
+            pointerEvents: "none",
+            zIndex: -1,
           }}
         />
       )}
@@ -1684,6 +1813,7 @@ export const App = () => {
           ref={canvasRef}
           elements={elements}
           connectors={connectors}
+          textElements={textElements}
           pan={pan}
           zoom={zoom}
           showGrid={ui.showGrid}
@@ -1694,6 +1824,10 @@ export const App = () => {
           defaultTextStyle={defaultTextStyle}
           connectionPreview={connectionPreview}
           editingElementId={editingElementId}
+          editingTextElementId={editingTextElementId}
+          editingText={editingText}
+          editingTextElementText={editingTextElementText}
+          caretIndex={caretIndex}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
