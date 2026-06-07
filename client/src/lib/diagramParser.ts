@@ -1,4 +1,4 @@
-import type { Element, Connector, TextStyle } from "./types";
+import type { Element, Connector, FontDrawStyle } from "./types";
 
 const ICON_PATH_MAP: Record<string, { viewBox: string; paths: string[] }> = {
   monitor: {
@@ -76,7 +76,7 @@ interface ParsedNode {
   icon?: string;
   color?: string;
   shape?: string;
-  typeface?: TextStyle;
+  typeface?: FontDrawStyle;
 }
 
 interface ParsedConnection {
@@ -100,7 +100,7 @@ export function parseDiagramCode(code: string): { elements: Element[]; connector
   // Global settings
   let colorMode: "pastel" | "bold" | "outline" = "pastel";
   let styleMode: "shadow" | "plain" | "watercolor" = "shadow";
-  let typeface: TextStyle = "clean";
+  let typeface: FontDrawStyle = "clean";
 
   const nodes: Map<string, ParsedNode> = new Map();
   const connections: ParsedConnection[] = [];
@@ -166,7 +166,7 @@ export function parseDiagramCode(code: string): { elements: Element[]; connector
     }
     if (line.startsWith("typeface")) {
       const val = line.split(/\s+/)[1];
-      if (val === "rough" || val === "mono" || val === "clean") typeface = val as TextStyle;
+      if (val === "rough" || val === "mono" || val === "clean") typeface = val as FontDrawStyle;
       return;
     }
 
@@ -276,7 +276,7 @@ export function parseDiagramCode(code: string): { elements: Element[]; connector
       icon: props.icon,
       color: props.color,
       shape: props.shape,
-      typeface: props.typeface as TextStyle
+      typeface: props.typeface as FontDrawStyle
     };
     nodes.set(nodeName, nodeObj);
 

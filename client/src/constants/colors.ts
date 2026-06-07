@@ -5,5 +5,5 @@ export const PRESET_COLORS = [
 ];
 
 export const DEFAULT_STROKE_COLOR = "#000000";
-export const DEFAULT_FILL_COLOR = "#fff333";
+export const DEFAULT_FILL_COLOR = "transparent";
 export const DEFAULT_HIGHLIGHTER_COLOR = "#FFEB3B";

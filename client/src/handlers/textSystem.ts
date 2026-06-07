@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import type { TextElement, Point, TextStyle, Element, Connector } from "../lib/types";
+import type { TextElement, Point, FontDrawStyle, Element, Connector } from "../lib/types";
 
 // =========================================================
 // TEXT ELEMENT FACTORIES
@@ -9,7 +9,7 @@ export const createCanvasText = (
   point: Point,
   color: string,
   opacity: number,
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: FontDrawStyle = "rough"
 ): TextElement => {
   const id = uuid();
   return {
@@ -20,10 +20,15 @@ export const createCanvasText = (
     width: 200,
     height: 60,
     text: "",
-    color,
-    fontSize: 16,
-    fontFamily: "Inter, sans-serif",
-    textAlign: "left",
+    style: {
+      fontSize: 16,
+      fontFamily: "Inter, sans-serif",
+      color,
+      bold: false,
+      italic: false,
+      align: "left",
+      lineHeight: 1.2,
+    },
     textStyle: defaultTextStyle,
     opacity: opacity / 100,
     rotation: 0,
@@ -36,7 +41,7 @@ export const createNodeText = (
   parentElement: Element,
   color: string,
   opacity: number,
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: FontDrawStyle = "rough"
 ): TextElement => {
   const id = uuid();
   const bounds = getElementBoundsLocal(parentElement);
@@ -49,10 +54,15 @@ export const createNodeText = (
     width: bounds.width - 16,
     height: bounds.height - 16,
     text: "",
-    color,
-    fontSize: 14,
-    fontFamily: "Inter, sans-serif",
-    textAlign: "center",
+    style: {
+      fontSize: 14,
+      fontFamily: "Inter, sans-serif",
+      color,
+      bold: false,
+      italic: false,
+      align: "center",
+      lineHeight: 1.25,
+    },
     textStyle: defaultTextStyle,
     opacity: opacity / 100,
     rotation: 0,
@@ -66,7 +76,7 @@ export const createEdgeText = (
   elements: Element[],
   color: string,
   opacity: number,
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: FontDrawStyle = "rough"
 ): TextElement => {
   const id = uuid();
   const midpoint = getConnectorMidpoint(connector, elements);
@@ -82,10 +92,15 @@ export const createEdgeText = (
     width: 100,
     height: 24,
     text: "",
-    color,
-    fontSize: 12,
-    fontFamily: "Inter, sans-serif",
-    textAlign: "center",
+    style: {
+      fontSize: 12,
+      fontFamily: "Inter, sans-serif",
+      color,
+      bold: false,
+      italic: false,
+      align: "center",
+      lineHeight: 1.2,
+    },
     textStyle: defaultTextStyle,
     opacity: opacity / 100,
     rotation: 0,
@@ -120,22 +135,36 @@ export const getElementBoundsLocal = (el: Element) => {
 export const applyTextStyleToContext = (
   ctx: CanvasRenderingContext2D,
   fontSize: number,
-  style: TextStyle,
-  defaultStyle: TextStyle = "rough"
+  style: FontDrawStyle | undefined,
+  defaultStyle: FontDrawStyle = "rough",
+  bold?: boolean,
+  italic?: boolean,
+  customFontFamily?: string
 ): void => {
   const resolved = style || defaultStyle;
   ctx.shadowColor = "transparent"; 
   ctx.shadowBlur = 0;
   
-  if (resolved === "mono") {
-    ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, 'Courier New', monospace`;
+  let fontFamily = "";
+  if (customFontFamily) {
+    fontFamily = customFontFamily;
+  } else if (resolved === "mono") {
+    fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, 'Courier New', monospace";
   } else if (resolved === "clean") {
-    ctx.font = `${fontSize}px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
+    fontFamily = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial";
   } else {
-    ctx.font = `${fontSize}px 'Caveat', 'Comic Sans MS', 'Comic Sans', cursive, sans-serif`;
+    fontFamily = "'Caveat', 'Comic Sans MS', 'Comic Sans', cursive, sans-serif";
     ctx.shadowColor = "rgba(0,0,0,0.04)";
     ctx.shadowBlur = 1;
   }
+
+  const fontParts: string[] = [];
+  if (bold) fontParts.push("bold");
+  if (italic) fontParts.push("italic");
+  fontParts.push(`${fontSize}px`);
+  fontParts.push(fontFamily);
+
+  ctx.font = fontParts.join(" ");
 };
 
 
@@ -155,6 +184,7 @@ export const wrapTextWithRanges = (
   maxWidth: number,
   startOffset: number
 ): WrappedLine[] => {
+  const tStart = performance.now();
   if (!text) {
     return [{ text: "", start: startOffset, end: startOffset }];
   }
@@ -190,6 +220,11 @@ export const wrapTextWithRanges = (
       start: currentLineStart,
       end: currentLineStart + currentLineText.length
     });
+  }
+  
+  const tTime = performance.now() - tStart;
+  if ((window as any).performanceMetrics) {
+    (window as any).performanceMetrics.textLayoutTime = ((window as any).performanceMetrics.textLayoutTime || 0) * 0.9 + tTime * 0.1;
   }
   
   return wrapped;
@@ -247,7 +282,7 @@ export const renderTextElement = (
   ctx: CanvasRenderingContext2D,
   textEl: TextElement,
   zoom: number = 1,
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -259,10 +294,18 @@ export const renderTextElement = (
     ctx.rotate(textEl.rotation * Math.PI / 180);
   }
 
-  applyTextStyleToContext(ctx, textEl.fontSize, textEl.textStyle, defaultTextStyle);
-  ctx.fillStyle = textEl.color;
+  const fontSize = textEl.style.fontSize;
+  const color = textEl.style.color;
+  const align = textEl.style.align;
+  const bold = textEl.style.bold;
+  const italic = textEl.style.italic;
+  const fontFamily = textEl.style.fontFamily;
+  const userLineHeight = textEl.style.lineHeight || 1.2;
+
+  applyTextStyleToContext(ctx, fontSize, textEl.textStyle, defaultTextStyle, bold, italic, fontFamily);
+  ctx.fillStyle = color;
   ctx.textBaseline = "middle";
-  ctx.textAlign = textEl.textAlign;
+  ctx.textAlign = align;
 
   const textVal = editingText !== undefined ? editingText : (textEl.text || "");
 
@@ -276,13 +319,13 @@ export const renderTextElement = (
     currentOffset += p.length + 1;
   });
 
-  const lineHeight = textEl.fontSize * 1.2;
+  const lineHeight = fontSize * userLineHeight;
   const totalTextHeight = lines.length * lineHeight;
   const startY = (textEl.height - totalTextHeight) / 2 + lineHeight / 2;
 
   let startX = padding;
-  if (textEl.textAlign === "center") startX = textEl.width / 2;
-  else if (textEl.textAlign === "right") startX = textEl.width - padding;
+  if (align === "center") startX = textEl.width / 2;
+  else if (align === "right") startX = textEl.width - padding;
 
   lines.forEach((line, i) => {
     ctx.fillText(line.text, startX, startY + i * lineHeight);
@@ -294,25 +337,25 @@ export const renderTextElement = (
       ctx,
       lines,
       caretIndex || 0,
-      textEl.fontSize,
+      fontSize,
       lineHeight,
       startY,
       startX,
-      textEl.textAlign,
+      align,
       padding,
       textEl.width
     );
 
     ctx.beginPath();
-    ctx.strokeStyle = textEl.color;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    ctx.moveTo(coords.x + 1, coords.y - textEl.fontSize / 2);
-    ctx.lineTo(coords.x + 1, coords.y + textEl.fontSize / 2);
+    ctx.moveTo(coords.x + 1, coords.y - fontSize / 2);
+    ctx.lineTo(coords.x + 1, coords.y + fontSize / 2);
     ctx.stroke();
   }
 
   // Selection box
-  if (textEl.isSelected) {
+  if (textEl.isSelected && editingText === undefined) {
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = "#3b82f6";
     ctx.lineWidth = 1.5 / zoom;

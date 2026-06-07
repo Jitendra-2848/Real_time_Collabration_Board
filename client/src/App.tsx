@@ -16,7 +16,7 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { LayersPanel } from "./components/LayersPanel";
 import { ZoomControls } from "./components/ZoomControls";
 import { DiagramPanel } from "./components/DiagramPanel";
-import type { Element, Point, Guide, Comment, Connector, TextStyle, ReshapeHandle, TextElement } from "./lib/types";
+import type { Element, Point, Guide, Comment, Connector, FontDrawStyle, ReshapeHandle, TextElement } from "./lib/types";
 import { screenToCanvas, isPointInElement, distanceToSegment } from "./lib/utils";
 
 import { useHistory } from "./hooks/useHistory";
@@ -41,7 +41,9 @@ import { isLongPress } from "./handlers/touchHandlers";
 import { 
   createCanvasText, 
   handleTextBlur as handleTextElementBlur,
-  isPointInTextElement
+  isPointInTextElement,
+  getTextResizeHandle,
+  resizeTextElement
 } from "./handlers/textSystem";
 
 export const App = () => {
@@ -49,9 +51,9 @@ export const App = () => {
   const ui = useUI();
   const drawingStyle = useDrawingStyle();
 
-  const [defaultTextStyle, setDefaultTextStyle] = useState<TextStyle>("rough");
+  const [defaultTextStyle, setDefaultTextStyle] = useState<FontDrawStyle>("rough");
   const cycleTextStyle = () => {
-    const order: TextStyle[] = ["rough", "clean", "mono"];
+    const order: FontDrawStyle[] = ["rough", "clean", "mono"];
     const next = order[(order.indexOf(defaultTextStyle) + 1) % order.length];
     setDefaultTextStyle(next);
   };
@@ -68,6 +70,8 @@ export const App = () => {
   const [editingTextElementId, setEditingTextElementId] = useState<string | null>(null);
   const [editingTextElementText, setEditingTextElementText] = useState("");
   const [caretIndex, setCaretIndex] = useState(0);
+
+
 
   const startEditingElement = (id: string, text: string) => {
     setEditingElementId(id);
@@ -151,6 +155,7 @@ export const App = () => {
   const SOCKET_URL = (import.meta as any).env?.VITE_SOCKET_URL || defaultSocketUrl;
   const lastReceivedConnectorsJson = useRef<string>("");
   const lastReceivedCommentsJson = useRef<string>("");
+  const lastReceivedTextElementsJson = useRef<string>("");
 
   const setElementsClean = useCallback((val: Element[] | ((prev: Element[]) => Element[])) => {
     updateElementsFromServer(prev => {
@@ -178,7 +183,22 @@ export const App = () => {
           }
         }
       }
-      return resolved.filter(el => el.id !== "__connectors_state__" && el.id !== "__comments_state__");
+      const textStateElement = resolved.find(el => el.id === "__text_elements_state__");
+      if (textStateElement && textStateElement.text) {
+        if (textStateElement.text !== lastReceivedTextElementsJson.current) {
+          lastReceivedTextElementsJson.current = textStateElement.text;
+          try {
+            setTextElements(JSON.parse(textStateElement.text));
+          } catch (e) {
+            console.error("Failed to parse text elements:", e);
+          }
+        }
+      }
+      return resolved.filter(el => 
+        el.id !== "__connectors_state__" && 
+        el.id !== "__comments_state__" && 
+        el.id !== "__text_elements_state__"
+      );
     });
   }, [updateElementsFromServer]);
 
@@ -292,8 +312,21 @@ export const App = () => {
         };
         socketRef.current.emit("element-update", commElement);
       }
+
+      const tjson = JSON.stringify(textElements);
+      if (tjson !== lastReceivedTextElementsJson.current) {
+        lastReceivedTextElementsJson.current = tjson;
+        const textStateElement: Element = {
+          id: "__text_elements_state__",
+          tool: "select" as any,
+          x: 0, y: 0, width: 0, height: 0,
+          color: "", strokeWidth: 0,
+          text: tjson,
+        };
+        socketRef.current.emit("element-update", textStateElement);
+      }
     }
-  }, [connectors, comments, socketConnected, currentRoom]);
+  }, [connectors, comments, textElements, socketConnected, currentRoom]);
 
   useEffect(() => {
     setElements(boards.find(b => b.id === activeBoardId)?.elements || []);
@@ -356,6 +389,12 @@ export const App = () => {
           prev.lineStyle !== el.lineStyle ||
           prev.arrowStyle !== el.arrowStyle ||
           prev.locked !== el.locked ||
+          prev.fontSize !== el.fontSize ||
+          prev.fontFamily !== el.fontFamily ||
+          prev.bold !== el.bold ||
+          prev.italic !== el.italic ||
+          prev.textAlign !== el.textAlign ||
+          prev.lineHeight !== el.lineHeight ||
           prev.points?.length !== el.points?.length ||
           JSON.stringify(prev.boundElementIds) !== JSON.stringify(el.boundElementIds)
         ) {
@@ -461,7 +500,7 @@ export const App = () => {
         py >= y + EDGE_THRESHOLD && py <= y + height - EDGE_THRESHOLD);
   };
 
-  const getEdgeAnchors = (el: Element): Array<{ x: number; y: number; side: string }> => {
+  const getEdgeAnchors = (el: Element | TextElement): Array<{ x: number; y: number; side: string }> => {
     const cx = el.x + el.width / 2;
     const cy = el.y + el.height / 2;
     return [
@@ -472,7 +511,7 @@ export const App = () => {
     ];
   };
 
-  const findBestAnchorPair = (source: Element, target: Element) => {
+  const findBestAnchorPair = (source: Element | TextElement, target: Element | TextElement) => {
     const sAnchors = getEdgeAnchors(source);
     const tAnchors = getEdgeAnchors(target);
     let best = { s: sAnchors[0], t: tAnchors[0], dist: Infinity };
@@ -500,16 +539,22 @@ export const App = () => {
 
   useEffect(() => {
     const handleKeyDownEvent = (e: KeyboardEvent) => {
-      if (editingElementId) return;
+      if (editingElementId || editingTextElementId) return;
       const action = handleKeyDown(e, ui.presentationMode);
       if (!action) return;
       switch (action.action) {
         case "undo": handleUndo(); break;
         case "redo": handleRedo(); break;
         case "delete-selected": {
-          const activeIds = new Set(elements.filter(el => !el.isSelected || el.locked).map(el => el.id));
-          setConnectors(prev => prev.filter(c => !c.isSelected && activeIds.has(c.sourceId) && activeIds.has(c.targetId)));
+          const activeShapeIds = new Set(elements.filter(el => !el.isSelected || el.locked).map(el => el.id));
+          const activeTextIds = new Set(textElements.filter(el => !el.isSelected || el.locked).map(el => el.id));
+          setConnectors(prev => prev.filter(c => 
+            !c.isSelected && 
+            (activeShapeIds.has(c.sourceId) || activeTextIds.has(c.sourceId)) && 
+            (activeShapeIds.has(c.targetId) || activeTextIds.has(c.targetId))
+          ));
           pushToHistoryWithSync(elements.filter(el => !el.isSelected || el.locked));
+          setTextElements(prev => prev.filter(el => !el.isSelected || el.locked));
           break;
         }
         case "copy":
@@ -656,11 +701,15 @@ export const App = () => {
     ui.setTemplatesOpen(false);
   };
 
-  const updateElements = useCallback((id: string, updates: Partial<Element>) => {
-    pushToHistoryWithSync(elements.map(el => (el.id === id ? { ...el, ...updates } : el)));
-  }, [elements, pushToHistoryWithSync]);
+  const updateElements = useCallback((id: string, updates: any) => {
+    if (elements.some(el => el.id === id)) {
+      pushToHistoryWithSync(elements.map(el => (el.id === id ? { ...el, ...updates } : el)));
+    } else if (textElements.some(el => el.id === id)) {
+      setTextElements(prev => prev.map(el => (el.id === id ? { ...el, ...updates } : el)));
+    }
+  }, [elements, textElements, pushToHistoryWithSync]);
 
-  const handleAutoAttachConnector = useCallback((sourceEl: Element, targetEl: Element, customElements?: Element[]) => {
+  const handleAutoAttachConnector = useCallback((sourceEl: Element | TextElement, targetEl: Element | TextElement, customElements?: Element[]) => {
     if (sourceEl.id === targetEl.id) return;
     const { sourceAnchor, targetAnchor } = findBestAnchorPair(sourceEl, targetEl);
     const newConnector = ConnectorService.createAutoConnector(sourceEl, targetEl, [], {
@@ -684,6 +733,17 @@ export const App = () => {
       return el;
     });
     pushToHistoryWithSync(updatedElements);
+
+    // Also update connectedElementIds for TextElements
+    setTextElements(prev => prev.map(el => {
+      if (el.id === sourceEl.id || el.id === targetEl.id) {
+        const connectedIds = [...(el.connectedElementIds || [])];
+        const otherId = el.id === sourceEl.id ? targetEl.id : sourceEl.id;
+        if (!connectedIds.includes(otherId)) connectedIds.push(otherId);
+        return { ...el, connectedElementIds: connectedIds };
+      }
+      return el;
+    }));
   }, [elements, drawingStyle, pushToHistoryWithSync]);
 
   const handleReshape = useCallback((el: Element, handle: ReshapeHandle, mouseDelta: Point): Element => {
@@ -819,13 +879,51 @@ export const App = () => {
         if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
       }
       if (!clickedSelf) {
-        hiddenInputRef.current?.blur();
+        // Commit text changes synchronously and exit edit mode, letting the click fall through
+        if (editingElementId) {
+          const nextElements = handleTextBlur(editingElementId, editingText, elements);
+          setElements(nextElements);
+          syncElementsDiff(actionStartElements.current || elements, nextElements);
+          syncBoard(nextElements);
+          setEditingElementId(null);
+          setEditingText("");
+        } else if (editingTextElementId) {
+          const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
+          setTextElements(nextTextElements);
+          setEditingTextElementId(null);
+          setEditingTextElementText("");
+        }
+      } else {
+        // Clicked self, consume event and prevent select/drag/resize triggers
+        return;
       }
-      return;
     }
 
     if (ui.selectedTool === "hand") { ui.setAction("panning"); return; }
-    if (ui.selectedTool === "eraser") { ui.setAction("erasing"); return; }
+    if (ui.selectedTool === "eraser") {
+      ui.setAction("erasing");
+      const deletedIds: string[] = [];
+      setElements((prev) => prev.filter((el) => {
+        let keep = true;
+        if (el.tool === "pen" && el.points) {
+          for (let i = 0; i < el.points.length - 1; i++) {
+            if (distanceToSegment(point.x, point.y, el.points[i].x, el.points[i].y, el.points[i + 1].x, el.points[i + 1].y) < drawingStyle.eraserSize) {
+              keep = false;
+              break;
+            }
+          }
+        } else {
+          keep = !isPointInElement(point.x, point.y, el);
+        }
+        if (!keep) {
+          deletedIds.push(el.id);
+        }
+        return keep;
+      }));
+      deletedIds.forEach((id) => deleteElement(id));
+      setTextElements((prev) => prev.filter((el) => !isPointInTextElement(point.x, point.y, el)));
+      return;
+    }
     if (ui.selectedTool === "eyedropper") {
       const ctx = canvas.getContext("2d");
       if (ctx) {
@@ -838,6 +936,7 @@ export const App = () => {
       const id = uuid();
       currentId.current = id;
       const newEl = createTextElement(point, drawingStyle.strokeColor, drawingStyle.opacity);
+      newEl.id = id; // Assign pre-generated ID to prevent sync/autofocus mismatches
       newEl.textStyle = defaultTextStyle;
       newEl.resizable = true;
       setElements([...elements, newEl]);
@@ -867,7 +966,9 @@ export const App = () => {
     }
 
     if (ui.selectedTool === "arrow") {
-      const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      const clickedShape = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+      const clickedText = clickedShape ? null : [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+      const clicked = clickedShape || clickedText;
       if (clicked) {
         const newId = uuid();
         connectionOrigin.current = { elementId: clicked.id, point };
@@ -908,6 +1009,34 @@ export const App = () => {
           } else if (distToEnd < handleThreshold) {
             ui.setAction("reconnecting-connector");
             reconnectConnectorInfo.current = { connectorId: selectedConnector.id, end: "target" };
+            return;
+          }
+        }
+      }
+
+      // Check text element resize handles first
+      const selectedTextEls = textElements.filter(el => el.isSelected && !el.locked);
+      for (const selectedTextEl of selectedTextEls) {
+        const handle = getTextResizeHandle(point.x, point.y, selectedTextEl, zoom);
+        if (handle) {
+          const isCorner = ["top-left", "top-right", "bottom-left", "bottom-right"].includes(handle);
+          if (isCorner) {
+            ui.setAction("resizing-text");
+            currentId.current = selectedTextEl.id;
+            reshapeOrigin.current = { handle: handle as any, startMouse: point, startEl: selectedTextEl as any };
+            return;
+          } else {
+            const newId = uuid();
+            connectionOrigin.current = { elementId: selectedTextEl.id, point };
+            currentId.current = newId;
+            setElements([...elements, {
+              id: newId, tool: "arrow" as any, x: point.x, y: point.y, width: 0, height: 0,
+              color: drawingStyle.strokeColor, strokeWidth: drawingStyle.strokeWidth,
+              opacity: drawingStyle.opacity / 100,
+              boundElementIds: { start: selectedTextEl.id, end: null }, resizable: true,
+              arrowStyle: "filled",
+            }]);
+            ui.setAction("connecting");
             return;
           }
         }
@@ -977,9 +1106,27 @@ export const App = () => {
         }
       }
 
+      // Check text element selection
+      const clickedTextEl = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+      if (clickedTextEl) {
+        setConnectors(prev => prev.map(c => ({ ...c, isSelected: false })));
+        setElements(elements.map(el => ({ ...el, isSelected: false })));
+        setTextElements(textElements.map(el =>
+          el.id === clickedTextEl.id
+            ? { ...el, isSelected: true }
+            : { ...el, isSelected: false }
+        ));
+        currentId.current = clickedTextEl.id;
+        offset.current = { x: point.x - clickedTextEl.x, y: point.y - clickedTextEl.y };
+        selectionOrigin.current = { x: clickedTextEl.x, y: clickedTextEl.y };
+        ui.setAction("moving-text");
+        return;
+      }
+
       const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
       if (clicked) {
         setConnectors(prev => prev.map(c => ({ ...c, isSelected: false })));
+        setTextElements(textElements.map(el => ({ ...el, isSelected: false })));
         const shift = e.shiftKey;
         const nextElements = elements.map(el =>
           el.id === clicked.id
@@ -995,10 +1142,10 @@ export const App = () => {
       }
 
       const clickedConnector = [...connectors].reverse().find(c => {
-        const sourceEl = elements.find(el => el.id === c.sourceId);
-        const targetEl = elements.find(el => el.id === c.targetId);
+        const sourceEl = elements.find(el => el.id === c.sourceId) || textElements.find(el => el.id === c.sourceId);
+        const targetEl = elements.find(el => el.id === c.targetId) || textElements.find(el => el.id === c.targetId);
         if (!sourceEl || !targetEl) return false;
-        return ConnectorService.isPointNearConnector(point.x, point.y, c, elements, 10 / zoom);
+        return ConnectorService.isPointNearConnector(point.x, point.y, c, elements, textElements, 10 / zoom);
       });
 
       if (clickedConnector) {
@@ -1081,6 +1228,17 @@ export const App = () => {
         })
       );
       updatedElements.forEach((el) => throttledUpdateElement(el));
+    } else if (ui.action === "moving-text" && currentId.current) {
+      setTextElements(prev =>
+        prev.map(el => {
+          if (el.id !== currentId.current) return el;
+          return {
+            ...el,
+            x: el.x + canvasDeltaX,
+            y: el.y + canvasDeltaY,
+          };
+        })
+      );
     } else if (ui.action === "erasing") {
       const deletedIds: string[] = [];
       setElements((prev) => prev.filter((el) => {
@@ -1101,6 +1259,7 @@ export const App = () => {
         return keep;
       }));
       deletedIds.forEach((id) => deleteElement(id));
+      setTextElements((prev) => prev.filter((el) => !isPointInTextElement(point.x, point.y, el)));
     } else if (ui.action === "resizing" && currentId.current) {
       let updatedEl: Element | null = null;
       if (reshapeOrigin.current) {
@@ -1125,12 +1284,29 @@ export const App = () => {
       if (updatedEl) {
         throttledUpdateElement(updatedEl);
       }
+    } else if (ui.action === "resizing-text" && currentId.current && reshapeOrigin.current) {
+      const delta = {
+        x: point.x - reshapeOrigin.current.startMouse.x,
+        y: point.y - reshapeOrigin.current.startMouse.y
+      };
+      setTextElements(prev =>
+        prev.map(el => {
+          if (el.id !== currentId.current) return el;
+          return resizeTextElement(reshapeOrigin.current!.startEl as any, reshapeOrigin.current!.handle, delta.x, delta.y);
+        })
+      );
     } else if (ui.action === "connecting" && currentId.current) {
-      const hovered = [...elements].reverse().find((el) =>
+      const hoveredShape = [...elements].reverse().find((el) =>
         el.id !== currentId.current &&
         el.id !== connectionOrigin.current?.elementId &&
         isPointInElement(point.x, point.y, el)
       );
+      const hoveredText = hoveredShape ? null : [...textElements].reverse().find((el) =>
+        el.id !== currentId.current &&
+        el.id !== connectionOrigin.current?.elementId &&
+        isPointInTextElement(point.x, point.y, el)
+      );
+      const hovered = hoveredShape || hoveredText;
       if (connectionOrigin.current) {
         setConnectionPreview({
           sourceId: connectionOrigin.current.elementId,
@@ -1142,7 +1318,7 @@ export const App = () => {
       let updatedEl: Element | null = null;
       setElements((prev) => prev.map((el) => {
         if (el.id !== currentId.current) return el;
-        const bounds = hovered ? getElementBoundsLocal(hovered) : null;
+        const bounds = hovered ? getElementBoundsLocal(hovered as any) : null;
         const tp = bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 } : point;
         updatedEl = {
           ...el,
@@ -1159,9 +1335,11 @@ export const App = () => {
       const { connectorId, end } = reconnectConnectorInfo.current;
       const conn = connectors.find(c => c.id === connectorId);
       if (conn) {
-        const hovered = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+        const hoveredShape = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+        const hoveredText = hoveredShape ? null : [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+        const hovered = hoveredShape || hoveredText;
         if (end === "target") {
-          const sourceEl = elements.find(el => el.id === conn.sourceId);
+          const sourceEl = elements.find(el => el.id === conn.sourceId) || textElements.find(el => el.id === conn.sourceId);
           if (sourceEl) {
             setConnectionPreview({
               sourceId: conn.sourceId,
@@ -1171,7 +1349,7 @@ export const App = () => {
             });
           }
         } else {
-          const targetEl = elements.find(el => el.id === conn.targetId);
+          const targetEl = elements.find(el => el.id === conn.targetId) || textElements.find(el => el.id === conn.targetId);
           if (targetEl) {
             setConnectionPreview({
               sourceId: conn.targetId,
@@ -1214,7 +1392,9 @@ export const App = () => {
           const canvas = canvasRef.current;
           if (canvas) {
             const point = screenToCanvas(lastMousePos.current.x, lastMousePos.current.y, canvas, pan, zoom);
-            const hovered = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+            const hoveredShape = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
+            const hoveredText = hoveredShape ? null : [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
+            const hovered = hoveredShape || hoveredText;
             if (hovered && hovered.id !== (end === "source" ? conn.targetId : conn.sourceId)) {
               setConnectors(prev => prev.map(c => {
                 if (c.id === connectorId) {
@@ -1224,8 +1404,8 @@ export const App = () => {
                   } else {
                     updated.targetId = hovered.id;
                   }
-                  const sourceEl = elements.find(el => el.id === updated.sourceId);
-                  const targetEl = elements.find(el => el.id === updated.targetId);
+                  const sourceEl = elements.find(el => el.id === updated.sourceId) || textElements.find(el => el.id === updated.sourceId);
+                  const targetEl = elements.find(el => el.id === updated.targetId) || textElements.find(el => el.id === updated.targetId);
                   if (sourceEl && targetEl) {
                     const { sourceAnchor, targetAnchor } = findBestAnchorPair(sourceEl, targetEl);
                     updated.sourceAnchor = `${sourceEl.id}-${sourceAnchor.side}`;
@@ -1249,17 +1429,17 @@ export const App = () => {
         const endId = currentEl?.boundElementIds?.end;
         if (endId) {
           nextElements = elements.filter(el => el.id !== currentId.current);
-          const targetEl = nextElements.find(el => el.id === endId);
-          const sourceEl = nextElements.find(el => el.id === connectionOrigin.current!.elementId);
+          const targetEl = nextElements.find(el => el.id === endId) || textElements.find(el => el.id === endId);
+          const sourceEl = nextElements.find(el => el.id === connectionOrigin.current!.elementId) || textElements.find(el => el.id === connectionOrigin.current!.elementId);
           if (sourceEl && targetEl) {
-            handleAutoAttachConnector(sourceEl, targetEl, nextElements);
+            handleAutoAttachConnector(sourceEl as any, targetEl as any, nextElements);
             didConnect = true;
           }
         }
       }
 
-      if (["drawing", "moving", "resizing", "connecting", "erasing"].includes(ui.action)) {
-        setConnectors(prev => ConnectorService.refreshAllConnectors(prev, nextElements));
+      if (["drawing", "moving", "moving-text", "resizing", "resizing-text", "connecting", "erasing"].includes(ui.action)) {
+        setConnectors(prev => ConnectorService.refreshAllConnectors(prev, nextElements, textElements));
         if (!didConnect) {
           pushToHistoryWithSync(nextElements);
         }
@@ -1607,11 +1787,10 @@ export const App = () => {
       />
 
       {/* Properties panel */}
-      {ui.propertiesPanelOpen && getSelected() && (
+      {ui.propertiesPanelOpen && (getSelected() || textElements.find(el => el.isSelected)) && (
         <PropertiesPanel
-          selectedElement={getSelected()}
+          selectedElement={getSelected() || textElements.find(el => el.isSelected)}
           onUpdateElement={updateElements}
-          defaultTextStyle={defaultTextStyle}
         />
       )}
 
@@ -1682,6 +1861,9 @@ export const App = () => {
           autoFocus
           value={editingElementId ? editingText : editingTextElementText}
           onChange={e => {
+            if ((window as any).lastInputTime === undefined || (window as any).lastInputTime === null) {
+              (window as any).lastInputTime = performance.now();
+            }
             const val = e.target.value;
             if (editingElementId) {
               setEditingText(val);
@@ -1839,6 +2021,8 @@ export const App = () => {
           cursor={getCursor()}
         />
       </div>
+
+
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import type { Element, Connector, TextStyle, ReshapeHandle, Point, TextElement } from "./types";
+import type { Element, Connector, FontDrawStyle, ReshapeHandle, Point, TextElement } from "./types";
 import { findBestAnchors, getConnectorControlPoints } from "./utils";
 import { renderTextElement, wrapTextWithRanges, getCaretCoordinates } from "../handlers/textSystem";
 import type { WrappedLine } from "../handlers/textSystem";
@@ -80,22 +80,36 @@ const applyShapeStyles = (ctx: CanvasRenderingContext2D, el: Element) => {
 export const applyTextStyle = (
   ctx: CanvasRenderingContext2D,
   fontSize: number,
-  style: TextStyle | undefined,
-  defaultStyle: TextStyle = "rough"
+  style: FontDrawStyle | undefined,
+  defaultStyle: FontDrawStyle = "rough",
+  bold?: boolean,
+  italic?: boolean,
+  customFontFamily?: string
 ): void => {
   const resolved = style || defaultStyle;
   ctx.shadowColor = "transparent"; 
   ctx.shadowBlur = 0;
   
-  if (resolved === "mono") {
-    ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, 'Courier New', monospace`;
+  let fontFamily = "";
+  if (customFontFamily) {
+    fontFamily = customFontFamily;
+  } else if (resolved === "mono") {
+    fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, 'Courier New', monospace";
   } else if (resolved === "clean") {
-    ctx.font = `${fontSize}px Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
+    fontFamily = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial";
   } else {
-    ctx.font = `${fontSize}px 'Caveat', 'Comic Sans MS', 'Comic Sans', cursive, sans-serif`;
+    fontFamily = "'Caveat', 'Comic Sans MS', 'Comic Sans', cursive, sans-serif";
     ctx.shadowColor = "rgba(0,0,0,0.04)";
     ctx.shadowBlur = 1;
   }
+
+  const fontParts: string[] = [];
+  if (bold) fontParts.push("bold");
+  if (italic) fontParts.push("italic");
+  fontParts.push(`${fontSize}px`);
+  fontParts.push(fontFamily);
+
+  ctx.font = fontParts.join(" ");
 };
 
 // =========================================================
@@ -109,7 +123,7 @@ const drawInternalIconAndText = (
   w: number,
   h: number,
   el: Element,
-  defaultTextStyle: TextStyle,
+  defaultTextStyle: FontDrawStyle,
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -118,7 +132,9 @@ const drawInternalIconAndText = (
   const hasIcon = el.svgPaths && el.svgPaths.length > 0 && el.viewBox;
 
   ctx.save();
-  applyTextStyle(ctx, 13, el.textStyle, defaultTextStyle);
+  const fontSize = el.fontSize || 13;
+  const userLineHeight = el.lineHeight || 1.25;
+  applyTextStyle(ctx, fontSize, el.textStyle, defaultTextStyle, el.bold, el.italic, el.fontFamily);
   ctx.fillStyle = el.color || "#1e293b";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -169,8 +185,7 @@ const drawInternalIconAndText = (
       currentOffset += p.length + 1;
     });
 
-    const fontSize = 13;
-    const lineHeight = fontSize * 1.25;
+    const lineHeight = fontSize * userLineHeight;
     const totalTextHeight = lines.length * lineHeight;
     const startY = y + (h - totalTextHeight) / 2 + lineHeight / 2;
     lines.forEach((line, i) => {
@@ -210,7 +225,7 @@ const drawRect = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -275,7 +290,7 @@ const drawEllipse = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -320,7 +335,7 @@ const drawDiamond = (
   w: number, 
   h: number, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -365,7 +380,7 @@ const drawCylinder = (
   w: number,
   h: number,
   el: Element,
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -437,7 +452,7 @@ const drawCylinder = (
 const drawArrow = (
   ctx: CanvasRenderingContext2D, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: FontDrawStyle = "rough"
 ) => {
   const x1 = el.x;
   const y1 = el.y;
@@ -494,7 +509,7 @@ const drawArrow = (
 const drawLine = (
   ctx: CanvasRenderingContext2D, 
   el: Element, 
-  defaultTextStyle: TextStyle = "rough"
+  defaultTextStyle: FontDrawStyle = "rough"
 ) => {
   applyShapeStyles(ctx, el);
   ctx.beginPath(); 
@@ -562,7 +577,7 @@ const drawText = (
   h: number, 
   el: Element, 
   _zoom: number, 
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingText?: string,
   caretVisible?: boolean,
   caretIndex?: number
@@ -570,12 +585,14 @@ const drawText = (
   const textVal = editingText !== undefined ? editingText : (el.text || "");
   const targetWidth = Math.max(w, 100);
   const targetHeight = Math.max(h, 24);
-  const fontSize = Math.max(16, targetHeight * 0.6);
+  const fontSize = el.fontSize || Math.max(16, targetHeight * 0.6);
+  const userLineHeight = el.lineHeight || 1.2;
+  const align = el.textAlign || "left";
   
-  applyTextStyle(ctx, fontSize, el.textStyle, defaultTextStyle);
+  applyTextStyle(ctx, fontSize, el.textStyle, defaultTextStyle, el.bold, el.italic, el.fontFamily);
   ctx.fillStyle = el.color;
   ctx.textBaseline = "middle"; 
-  ctx.textAlign = "left";
+  ctx.textAlign = align as CanvasTextAlign;
   
   const padding = 8;
   const paragraphs = textVal.split("\n");
@@ -587,12 +604,16 @@ const drawText = (
     currentOffset += p.length + 1;
   });
   
-  const lineHeight = fontSize * 1.2;
+  const lineHeight = fontSize * userLineHeight;
   const totalTextHeight = lines.length * lineHeight;
   const startY = y + (targetHeight - totalTextHeight) / 2 + lineHeight / 2;
   
+  let startX = x + padding;
+  if (align === "center") startX = x + targetWidth / 2;
+  else if (align === "right") startX = x + targetWidth - padding;
+
   lines.forEach((line, i) => { 
-    ctx.fillText(line.text, x + padding, startY + i * lineHeight); 
+    ctx.fillText(line.text, startX, startY + i * lineHeight); 
   });
 
   // Render blinking caret/cursor on canvas
@@ -604,8 +625,8 @@ const drawText = (
       fontSize,
       lineHeight,
       startY,
-      x + padding,
-      "left",
+      startX,
+      align,
       padding,
       targetWidth
     );
@@ -654,11 +675,11 @@ const drawIcon = (
 
 export const renderConnector = (
   ctx: CanvasRenderingContext2D,
-  sourceEl: Element,
-  targetEl: Element,
+  sourceEl: Element | TextElement,
+  targetEl: Element | TextElement,
   connector: Connector,
   _zoom: number = 1,
-  _defaultTextStyle: TextStyle = "rough"
+  _defaultTextStyle: FontDrawStyle = "rough"
 ) => {
   ctx.save();
   
@@ -932,7 +953,7 @@ export const renderElement = (
   ctx: CanvasRenderingContext2D, 
   el: Element, 
   zoom: number = 1, 
-  defaultTextStyle: TextStyle = "rough", 
+  defaultTextStyle: FontDrawStyle = "rough", 
   editingElementId?: string | null,
   editingText?: string,
   caretVisible?: boolean,
@@ -984,7 +1005,7 @@ export const renderElement = (
   }
 
   // Selection UI
-  if (el.isSelected) {
+  if (el.isSelected && el.id !== editingElementId) {
     let bx = x;
     let by = y;
     let bw = w;
@@ -1055,13 +1076,28 @@ export const renderTextElements = (
   ctx: CanvasRenderingContext2D,
   textElements: TextElement[],
   zoom: number = 1,
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingTextElementId?: string | null,
   editingTextElementText?: string,
   caretVisible?: boolean,
-  caretIndex?: number
+  caretIndex?: number,
+  pan?: { x: number; y: number }
 ) => {
-  textElements.forEach(textEl => {
+  let visibleTextElements = textElements;
+  if (pan) {
+    const vx = -pan.x / zoom;
+    const vy = -pan.y / zoom;
+    const vw = window.innerWidth / zoom;
+    const vh = window.innerHeight / zoom;
+    visibleTextElements = textElements.filter(el => {
+      return el.x + el.width >= vx &&
+             el.x <= vx + vw &&
+             el.y + el.height >= vy &&
+             el.y <= vy + vh;
+    });
+  }
+
+  visibleTextElements.forEach(textEl => {
     const isEditingThis = textEl.id === editingTextElementId;
     const currentEditingText = isEditingThis ? editingTextElementText : undefined;
     const currentCaretVisible = isEditingThis ? caretVisible : undefined;
@@ -1084,11 +1120,12 @@ export const renderLayers = (
   comments: { id: string; x: number; y: number; text: string; author: string; timestamp: number; resolved: boolean }[],
   rubberBand: { x1: number; y1: number; x2: number; y2: number } | null,
   connectionPreview: { sourceId: string; sourceAnchor: string; targetId: string | null; mousePos: Point } | null,
-  defaultTextStyle: TextStyle = "rough",
+  defaultTextStyle: FontDrawStyle = "rough",
   editingElementId?: string | null,
   editingText?: string,
   caretVisible?: boolean,
-  caretIndex?: number
+  caretIndex?: number,
+  textElements: TextElement[] = []
 ) => {
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth, h = window.innerHeight;
@@ -1118,13 +1155,13 @@ export const renderLayers = (
     connCtx.setTransform(dpr, 0, 0, dpr, 0, 0); connCtx.clearRect(0, 0, w, h);
     connCtx.save(); connCtx.translate(pan.x, pan.y); connCtx.scale(zoom, zoom);
     connectors.forEach(conn => {
-      const sourceEl = elements.find(el => el.id === conn.sourceId);
-      const targetEl = elements.find(el => el.id === conn.targetId);
+      const sourceEl = elements.find(el => el.id === conn.sourceId) || textElements.find(el => el.id === conn.sourceId);
+      const targetEl = elements.find(el => el.id === conn.targetId) || textElements.find(el => el.id === conn.targetId);
       if (sourceEl && targetEl) renderConnector(connCtx, sourceEl, targetEl, conn, zoom, defaultTextStyle);
     });
     if (connectionPreview && !connectionPreview.targetId) {
       connCtx.strokeStyle = "#3b82f6"; connCtx.lineWidth = 2; connCtx.setLineDash([6, 4]);
-      const sourceEl = elements.find(el => el.id === connectionPreview.sourceId);
+      const sourceEl = elements.find(el => el.id === connectionPreview.sourceId) || textElements.find(el => el.id === connectionPreview.sourceId);
       if (sourceEl) {
         connCtx.beginPath();
         connCtx.moveTo(sourceEl.x + sourceEl.width / 2, sourceEl.y + sourceEl.height / 2);
@@ -1136,13 +1173,14 @@ export const renderLayers = (
   }
 
   // Layer 3: Nodes/Elements
+  const visibleElements = getVisibleElements(elements, pan, zoom);
   const nodeCtx = layers.nodes.getContext("2d");
   if (nodeCtx) {
     layers.nodes.width = w * dpr; layers.nodes.height = h * dpr;
     layers.nodes.style.width = `${w}px`; layers.nodes.style.height = `${h}px`;
     nodeCtx.setTransform(dpr, 0, 0, dpr, 0, 0); nodeCtx.clearRect(0, 0, w, h);
     nodeCtx.save(); nodeCtx.translate(pan.x, pan.y); nodeCtx.scale(zoom, zoom);
-    elements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex));
+    visibleElements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex));
     comments.filter(c => !c.resolved).forEach((c, i) => {
       nodeCtx.beginPath(); nodeCtx.arc(c.x, c.y, 10/zoom, 0, Math.PI*2);
       nodeCtx.fillStyle = "#facc15"; nodeCtx.fill();

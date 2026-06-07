@@ -35,4 +35,9 @@ export const TEMPLATES: Record<string, Element[]> = {
     { id:"8", tool:"text", x:180, y:300, width:100, height:30, color:"#000", strokeWidth:0, text:"Opportunities" },
     { id:"9", tool:"text", x:620, y:300, width:100, height:30, color:"#000", strokeWidth:0, text:"Threats" },
   ],
+  "Nested Blocks": [
+    { id: "nest-1", tool: "rect", x: 100, y: 100, width: 450, height: 350, color: "#3b82f6", fillColor: "transparent", strokeWidth: 2, text: "Outer Container (Transparent)", fontFamily: "Inter, sans-serif", bold: true, fontSize: 16 },
+    { id: "nest-2", tool: "rect", x: 140, y: 180, width: 160, height: 120, color: "#0f172a", fillColor: "#dbeafe", strokeWidth: 1.5, text: "Inner Block A", fontFamily: "Inter, sans-serif", fontSize: 13 },
+    { id: "nest-3", tool: "circle", x: 340, y: 180, width: 140, height: 120, color: "#0f172a", fillColor: "#bbf7d0", strokeWidth: 1.5, text: "Inner Block B", fontFamily: "Inter, sans-serif", fontSize: 13 },
+  ],
 };

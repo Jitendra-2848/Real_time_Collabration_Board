@@ -222,16 +222,26 @@ export const ToolSidebar: React.FC<Props> = ({
 
               <div>
                 <label className="text-[10px] sm:text-xs font-semibold text-gray-600 block mb-1 sm:mb-1.5">Fill</label>
-                <div className="flex gap-1 sm:gap-2">
-                  <div className="flex-1">
-                    <input
-                      type="color"
-                      value={fillColor}
-                      onChange={e => onFillColorChange(e.target.value)}
-                      className="w-full h-8 sm:h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400"
-                    />
-                  </div>
-                  <span className="text-[9px] sm:text-xs text-gray-500 flex items-center">{fillColor}</span>
+                <div className="flex gap-1.5 items-center">
+                  <input
+                    type="color"
+                    value={fillColor === "transparent" ? "#ffffff" : fillColor}
+                    onChange={e => onFillColorChange(e.target.value)}
+                    className="w-12 h-8 sm:h-10 rounded-lg cursor-pointer border border-gray-300 hover:border-gray-400 p-0.5 bg-white"
+                  />
+                  <button
+                    onClick={() => onFillColorChange(fillColor === "transparent" ? "#ffffff" : "transparent")}
+                    className={`flex-1 h-8 sm:h-10 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5 ${
+                      fillColor === "transparent"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="w-3.5 h-3.5 border border-dashed border-current rounded-sm relative overflow-hidden flex items-center justify-center">
+                      <div className="w-5 h-[1px] bg-red-500 rotate-45 absolute" />
+                    </div>
+                    {fillColor === "transparent" ? "Transparent" : "Set Transparent"}
+                  </button>
                 </div>
               </div>
             </div>

@@ -1,10 +1,10 @@
 import { v4 as uuid } from "uuid";
-import type { Element, Connector, Point, TextStyle, Anchor } from "../lib/types";
+import type { Element, Connector, Point, FontDrawStyle, Anchor, TextElement } from "../lib/types";
 import { getElementBounds, findBestAnchors, getConnectorControlPoints } from "../lib/utils";
 
 // Find the closest anchor point on an element to a given point
 export const findClosestAnchor = (
-  el: Element,
+  el: Element | TextElement,
   px: number,
   py: number
 ): { anchor: Anchor; distance: number } | null => {
@@ -21,7 +21,7 @@ export const findClosestAnchor = (
   ];
 
   // Also check existing anchors
-  if (el.anchors) {
+  if ('anchors' in el && el.anchors) {
     for (const a of el.anchors) {
       candidates.push({ position: a.position, x: a.x, y: a.y });
     }
@@ -67,12 +67,12 @@ export const findClosestAnchor = (
 
 // Automatically create a connector between two elements
 export const createAutoConnector = (
-  sourceEl: Element,
-  targetEl: Element,
+  sourceEl: Element | TextElement,
+  targetEl: Element | TextElement,
   _existingConnectors: Connector[],
   options?: {
     label?: string;
-    labelStyle?: TextStyle;
+    labelStyle?: FontDrawStyle;
     arrowStyle?: "default" | "filled" | "none";
     lineStyle?: "solid" | "dashed" | "dotted";
     color?: string;
@@ -115,10 +115,11 @@ export const isPointNearConnector = (
   py: number,
   connector: Connector,
   elements: Element[],
+  textElements: TextElement[] = [],
   threshold: number = 10
 ): boolean => {
-  const sourceEl = elements.find((el) => el.id === connector.sourceId);
-  const targetEl = elements.find((el) => el.id === connector.targetId);
+  const sourceEl = elements.find((el) => el.id === connector.sourceId) || textElements.find((el) => el.id === connector.sourceId);
+  const targetEl = elements.find((el) => el.id === connector.targetId) || textElements.find((el) => el.id === connector.targetId);
   if (!sourceEl || !targetEl) return false;
 
   const { s: sourceAnchor, t: targetAnchor } = findBestAnchors(sourceEl, targetEl);
@@ -140,10 +141,11 @@ export const isPointNearConnector = (
 // Get the midpoint of a connector path (for label positioning)
 export const getConnectorMidpoint = (
   connector: Connector,
-  elements: Element[]
+  elements: Element[],
+  textElements: TextElement[] = []
 ): Point | null => {
-  const sourceEl = elements.find((el) => el.id === connector.sourceId);
-  const targetEl = elements.find((el) => el.id === connector.targetId);
+  const sourceEl = elements.find((el) => el.id === connector.sourceId) || textElements.find((el) => el.id === connector.sourceId);
+  const targetEl = elements.find((el) => el.id === connector.targetId) || textElements.find((el) => el.id === connector.targetId);
   if (!sourceEl || !targetEl) return null;
 
   const sx = sourceEl.x + sourceEl.width / 2;
@@ -157,11 +159,12 @@ export const getConnectorMidpoint = (
 // Update all connector positions based on current element positions
 export const refreshAllConnectors = (
   connectors: Connector[],
-  elements: Element[]
+  elements: Element[],
+  textElements: TextElement[] = []
 ): Connector[] => {
   return connectors.map((conn) => {
-    const sourceEl = elements.find((el) => el.id === conn.sourceId);
-    const targetEl = elements.find((el) => el.id === conn.targetId);
+    const sourceEl = elements.find((el) => el.id === conn.sourceId) || textElements.find((el) => el.id === conn.sourceId);
+    const targetEl = elements.find((el) => el.id === conn.targetId) || textElements.find((el) => el.id === conn.targetId);
     if (!sourceEl || !targetEl) return conn;
 
     const sourceCenter = {

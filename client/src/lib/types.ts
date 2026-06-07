@@ -37,13 +37,23 @@ export interface Comment {
   resolved: boolean;
 }
 
-export type TextStyle = "rough" | "clean" | "mono";
+export type FontDrawStyle = "rough" | "clean" | "mono";
 
 // =========================================================
 // TEXT SYSTEM TYPES
 // =========================================================
 
 export type TextType = "canvas" | "node" | "edge";
+
+export interface TextStyle {
+  fontSize: number;
+  fontFamily: string;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  align: "left" | "center" | "right";
+  lineHeight: number;
+}
 
 export interface TextElement {
   id: string;
@@ -53,11 +63,8 @@ export interface TextElement {
   width: number;
   height: number;
   text: string;
-  color: string;
-  fontSize: number;
-  fontFamily: string;
-  textAlign: "left" | "center" | "right";
-  textStyle: TextStyle;
+  style: TextStyle;
+  textStyle: FontDrawStyle;
   opacity: number;
   rotation: number;
   isSelected: boolean;
@@ -68,6 +75,7 @@ export interface TextElement {
   edgeId?: string;
   edgeOffset?: number; // 0-1 along the edge path
   edgeDragOffset?: { x: number; y: number }; // Manual drag offset from midpoint
+  connectedElementIds?: string[];
 }
 
 export interface Anchor {
@@ -85,7 +93,7 @@ export interface Connector {
   sourceAnchor?: string;
   targetAnchor?: string;
   label?: string;
-  labelStyle?: TextStyle;
+  labelStyle?: FontDrawStyle;
   arrowStyle?: "default" | "filled" | "none";
   lineStyle?: "solid" | "dashed" | "dotted";
   color?: string;
@@ -107,7 +115,7 @@ export interface Element {
   strokeWidth: number;
   opacity?: number;
   text?: string;
-  textStyle?: TextStyle;
+  textStyle?: FontDrawStyle;
   icon?: string;
   iconName?: string;
   iconColor?: string;
@@ -120,7 +128,7 @@ export interface Element {
   locked?: boolean;
   lineStyle?: "solid" | "dashed" | "dotted";
   arrowStyle?: "default" | "filled" | "none";
-  label?: { text: string; offsetX?: number; offsetY?: number; style?: TextStyle };
+  label?: { text: string; offsetX?: number; offsetY?: number; style?: FontDrawStyle };
   imageData?: string;
   rotation?: number;
   resizable?: boolean;
@@ -133,12 +141,14 @@ export interface Element {
   letterSpacing?: number;
   fontFamily?: string;
   textAlign?: "left" | "center" | "right" | "justify";
+  bold?: boolean;
+  italic?: boolean;
   padding?: number;
   lastModified?: number;
 }
 
 export interface BoardSettings {
-  defaultTextStyle: TextStyle;
+  defaultTextStyle: FontDrawStyle;
   zoom: number;
   pan: Point;
   gridEnabled: boolean;
@@ -154,7 +164,7 @@ export interface AppState {
   zoom: number;
   selectedTool: Tool;
   config: DrawConfig;
-  defaultTextStyle: TextStyle;
+  defaultTextStyle: FontDrawStyle;
 }
 
 export interface DrawConfig {

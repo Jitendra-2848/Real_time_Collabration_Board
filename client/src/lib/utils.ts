@@ -1,4 +1,4 @@
-import type { Element, Point } from "./types";
+import type { Element, Point, TextElement } from "./types";
 
 // Convert screen coordinates to canvas world coordinates
 export const screenToCanvas = (
@@ -15,18 +15,37 @@ export const screenToCanvas = (
   };
 };
 
-// Check if point hits element
 export const isPointInElement = (x: number, y: number, el: Element): boolean => {
   if (el.tool === "pen" && el.points) {
     return el.points.some(p => 
-      Math.hypot(p.x - x, p.y - y) < 10 / 1 // Adjust hit tolerance
+      Math.hypot(p.x - x, p.y - y) < 10
     );
   }
   const minX = Math.min(el.x, el.x + el.width);
   const maxX = Math.max(el.x, el.x + el.width);
   const minY = Math.min(el.y, el.y + el.height);
   const maxY = Math.max(el.y, el.y + el.height);
-  return x >= minX && x <= maxX && y >= minY && y <= maxY;
+  
+  if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+    if (el.fillColor === "transparent") {
+      const borderThreshold = 10;
+      const nearLeft = Math.abs(x - minX) <= borderThreshold;
+      const nearRight = Math.abs(x - maxX) <= borderThreshold;
+      const nearTop = Math.abs(y - minY) <= borderThreshold;
+      const nearBottom = Math.abs(y - maxY) <= borderThreshold;
+      
+      let nearText = false;
+      if (el.text) {
+        const cx = minX + (maxX - minX) / 2;
+        const cy = minY + (maxY - minY) / 2;
+        nearText = Math.abs(x - cx) < Math.max(40, (maxX - minX) * 0.45) &&
+                   Math.abs(y - cy) < Math.max(20, (maxY - minY) * 0.45);
+      }
+      return nearLeft || nearRight || nearTop || nearBottom || nearText;
+    }
+    return true;
+  }
+  return false;
 };
 
 // Get bounding box for selection
@@ -76,8 +95,8 @@ export const distanceToSegment = (
   return Math.sqrt(dx * dx + dy * dy);
 };
 
-export const getElementBounds = (el: Element) => {
-    if (el.tool === "pen" && el.points && el.points.length > 0) {
+export const getElementBounds = (el: Element | TextElement) => {
+    if ('tool' in el && el.tool === "pen" && el.points && el.points.length > 0) {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       el.points.forEach(p => {
         minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
@@ -88,8 +107,8 @@ export const getElementBounds = (el: Element) => {
     return { x: el.width < 0 ? el.x + el.width : el.x, y: el.height < 0 ? el.y + el.height : el.y, width: Math.abs(el.width), height: Math.abs(el.height) };
   };
 
-export const getEdgeAnchors = (el: Element) => {
-  if (el.tool === "line" || el.tool === "arrow") {
+export const getEdgeAnchors = (el: Element | TextElement) => {
+  if ('tool' in el && (el.tool === "line" || el.tool === "arrow")) {
     return [
       { x: el.x, y: el.y, side: "start" as const },
       { x: el.x + el.width, y: el.y + el.height, side: "end" as const },
@@ -111,7 +130,7 @@ export const getEdgeAnchors = (el: Element) => {
   ];
 };
 
-export const findBestAnchors = (source: Element, target: Element) => {
+export const findBestAnchors = (source: Element | TextElement, target: Element | TextElement) => {
   const sAnchors = getEdgeAnchors(source);
   const tAnchors = getEdgeAnchors(target);
   let best = { s: sAnchors[0], t: tAnchors[0], dist: Infinity };

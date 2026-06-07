@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import type { Element, Point, Guide, Comment, Connector, TextStyle, TextElement } from "../lib/types";
+import type { Element, Point, Guide, Comment, Connector, FontDrawStyle, TextElement } from "../lib/types";
 import { renderLayers, renderTextElements } from "../lib/renderer";
 import type { CanvasLayers } from "../lib/renderer";
 
@@ -14,7 +14,7 @@ interface Props {
   bgTheme?: "white"|"light-grid"|"dark"|"dark-grid";
   guides?: Guide[];
   comments?: Comment[];
-  defaultTextStyle?: TextStyle;
+  defaultTextStyle?: FontDrawStyle;
   editingElementId?: string | null;
   editingTextElementId?: string | null;
   editingText?: string;
@@ -70,7 +70,7 @@ export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
         nodes: nodesLayer,
         overlays: overlay,
       };
-      renderLayers(layers, elements, connectors, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex);
+      renderLayers(layers, elements, connectors, pan, zoom, showGrid, bgTheme, guides, comments, rubberBand, connectionPreview, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex, textElements);
       
       // Render text elements on nodes layer
       if (textElements && textElements.length > 0) {
@@ -79,7 +79,7 @@ export const Canvas = React.forwardRef<HTMLCanvasElement, Props>(
           nodeCtx.save();
           nodeCtx.translate(pan.x, pan.y);
           nodeCtx.scale(zoom, zoom);
-          renderTextElements(nodeCtx, textElements, zoom, defaultTextStyle, editingTextElementId, editingTextElementText, caretVisible, caretIndex);
+          renderTextElements(nodeCtx, textElements, zoom, defaultTextStyle, editingTextElementId, editingTextElementText, caretVisible, caretIndex, pan);
           nodeCtx.restore();
         }
       }
