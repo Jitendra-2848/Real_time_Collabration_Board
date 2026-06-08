@@ -358,9 +358,16 @@ export const App = () => {
   const lastMousePos = useRef<Point>({ x: 0, y: 0 });
   const reconnectConnectorInfo = useRef<{ connectorId: string; end: "source" | "target" } | null>(null);
 
+  const editingElementIdRef = useRef<string | null>(editingElementId);
+  const editingTextElementIdRef = useRef<string | null>(editingTextElementId);
+  const textElementsRef = useRef<TextElement[]>(textElements);
+
   useEffect(() => { activeBoardIdRef.current = activeBoardId; }, [activeBoardId]);
   useEffect(() => { elementsRef.current = elements; }, [elements]);
   useEffect(() => { connectorsRef.current = connectors; }, [connectors]);
+  useEffect(() => { editingElementIdRef.current = editingElementId; }, [editingElementId]);
+  useEffect(() => { editingTextElementIdRef.current = editingTextElementId; }, [editingTextElementId]);
+  useEffect(() => { textElementsRef.current = textElements; }, [textElements]);
 
   useEffect(() => {
     if (socketConnected && currentRoom && socketRef.current) {
@@ -911,8 +918,11 @@ export const App = () => {
   }, []);
 
   const handleTextBlurEvent = () => {
-    if (!editingElementId) return;
-    const nextElements = handleTextBlur(editingElementId, editingText, elements);
+    const currentId = editingElementIdRef.current;
+    if (!currentId) return;
+    // Read live value from DOM to avoid stale closure bug
+    const liveText = hiddenInputRef.current?.value ?? editingText;
+    const nextElements = handleTextBlur(currentId, liveText, elementsRef.current);
     pushToHistoryWithSync(nextElements);
     setEditingElementId(null);
     setEditingText("");
@@ -978,6 +988,7 @@ export const App = () => {
           setEditingTextElementText("");
         }
       }
+      ui.setAction("none"); // Reset any action started by the first click of the double-click gesture!
       if (clickedElement) {
         ui.setSelectedTool('select');
         const otherSelected = elements.filter(el => el.isSelected && el.id !== clickedElement.id);
@@ -1000,29 +1011,39 @@ export const App = () => {
     if (editingElementId || editingTextElementId) {
       let clickedSelf = false;
       if (editingElementId) {
-        const clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
-        if (clicked && clicked.id === editingElementId) clickedSelf = true;
+        const el = elements.find(el => el.id === editingElementId);
+        if (el) {
+          const minX = Math.min(el.x, el.x + el.width);
+          const maxX = Math.max(el.x, el.x + el.width);
+          const minY = Math.min(el.y, el.y + el.height);
+          const maxY = Math.max(el.y, el.y + el.height);
+          if (point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY) {
+            clickedSelf = true;
+          }
+        }
       } else if (editingTextElementId) {
         const clicked = [...textElements].reverse().find(el => isPointInTextElement(point.x, point.y, el));
         if (clicked && clicked.id === editingTextElementId) clickedSelf = true;
       }
+      
       if (!clickedSelf) {
         // Commit text changes synchronously and exit edit mode, letting the click fall through
+        const liveText = hiddenInputRef.current?.value ?? (editingElementId ? editingText : editingTextElementText);
         if (editingElementId) {
-          const nextElements = handleTextBlur(editingElementId, editingText, elements);
+          const nextElements = handleTextBlur(editingElementId, liveText, elements);
           setElements(nextElements);
-          syncElementsDiff(actionStartElements.current || elements, nextElements);
-          syncBoard(nextElements);
+          pushToHistoryWithSync(nextElements);
           setEditingElementId(null);
           setEditingText("");
         } else if (editingTextElementId) {
-          const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
+          const nextTextElements = handleTextElementBlur(editingTextElementId, liveText, textElements);
           setTextElements(nextTextElements);
           setEditingTextElementId(null);
           setEditingTextElementText("");
         }
       } else {
-        // Clicked self, consume event and prevent select/drag/resize triggers
+        // Clicked self, consume event, prevent blur and prevent select/drag/resize triggers
+        e.preventDefault();
         return;
       }
     }
@@ -1078,17 +1099,28 @@ export const App = () => {
     }
     if (ui.selectedTool === "icon") { ui.setLibraryOpen(true); return; }
     if (ui.selectedTool === "comment") {
-      const newComment: Comment = {
-        id: uuid(),
-        x: point.x,
-        y: point.y,
+      const id = uuid();
+      const newComment: Element = {
+        id,
+        tool: "comment",
+        x: point.x - 20,
+        y: point.y - 20,
+        width: 40,
+        height: 40,
+        color: "#ca8a04",
+        fillColor: "#facc15",
+        strokeWidth: 1.5,
+        opacity: 1,
         text: "",
+        resizable: true,
         author: user?.username || "Guest",
         timestamp: Date.now(),
         resolved: false,
       };
-      setComments(prev => [...prev, newComment]);
-      setActiveCommentId(newComment.id);
+      const nextElements = [...elements, newComment];
+      setElements(nextElements);
+      pushToHistoryWithSync(nextElements);
+      setActiveCommentId(id);
       ui.setSelectedTool("select");
       return;
     }
@@ -1121,8 +1153,6 @@ export const App = () => {
       if (clickedComment) {
         setActiveCommentId(clickedComment.id);
         return;
-      } else {
-        setActiveCommentId(null);
       }
       const selectedConnector = connectors.find(c => c.isSelected);
       if (selectedConnector) {
@@ -1259,6 +1289,11 @@ export const App = () => {
         clicked = [...elements].reverse().find(el => isPointInElement(point.x, point.y, el));
       }
       if (clicked) {
+        if (clicked.tool === "comment") {
+          setActiveCommentId(clicked.id);
+        } else {
+          setActiveCommentId(null);
+        }
         setConnectors(prev => prev.map(c => ({ ...c, isSelected: false })));
         setTextElements(textElements.map(el => ({ ...el, isSelected: false })));
         const shift = e.shiftKey;
@@ -1283,11 +1318,13 @@ export const App = () => {
       });
 
       if (clickedConnector) {
+        setActiveCommentId(null);
         setElements(elements.map(el => ({ ...el, isSelected: false })));
         setConnectors(prev => prev.map(c => ({ ...c, isSelected: c.id === clickedConnector.id })));
         return;
       }
 
+      setActiveCommentId(null);
       setConnectors(prev => prev.map(c => ({ ...c, isSelected: false })));
       if (!e.shiftKey) setElements(elements.map(el => ({ ...el, isSelected: false })));
       if (e.shiftKey) {
@@ -2023,10 +2060,23 @@ export const App = () => {
                 isInteractingWithFormattingBar.current = false;
                 return;
               }
-              if (editingElementId) {
-                handleTextBlurEvent();
-              } else if (editingTextElementId) {
-                const nextTextElements = handleTextElementBlur(editingTextElementId, editingTextElementText, textElements);
+              // Read live DOM value to avoid stale closure bug
+              const liveText = hiddenInputRef.current?.value ?? "";
+              const currentEditingElementId = editingElementIdRef.current;
+              const currentEditingTextElementId = editingTextElementIdRef.current;
+              
+              if (!currentEditingElementId && !currentEditingTextElementId) {
+                // Already committed by handleMouseDown or Escape! Do nothing.
+                return;
+              }
+
+              if (currentEditingElementId) {
+                const nextElements = handleTextBlur(currentEditingElementId, liveText, elementsRef.current);
+                pushToHistoryWithSync(nextElements);
+                setEditingElementId(null);
+                setEditingText("");
+              } else if (currentEditingTextElementId) {
+                const nextTextElements = handleTextElementBlur(currentEditingTextElementId, liveText, textElementsRef.current);
                 setTextElements(nextTextElements);
                 setEditingTextElementId(null);
                 setEditingTextElementText("");
@@ -2037,6 +2087,9 @@ export const App = () => {
             e.stopPropagation();
             if (e.key === "Escape") {
               e.preventDefault();
+              if (hiddenInputRef.current) {
+                hiddenInputRef.current.value = originalText.current;
+              }
               if (editingElementId) {
                 setEditingText(originalText.current);
               } else if (editingTextElementId) {
@@ -2251,53 +2304,75 @@ export const App = () => {
       )}
 
       {/* Comment popover */}
-      {activeCommentId && (
-        <div 
-          className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-2xl p-3 w-64 flex flex-col gap-2"
-          style={{
-            left: (pan.x + (comments.find(c => c.id === activeCommentId)?.x || 0) * zoom) + 20,
-            top: (pan.y + (comments.find(c => c.id === activeCommentId)?.y || 0) * zoom) - 20,
-          }}
-          onMouseDown={e => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-bold text-gray-700">{comments.find(c => c.id === activeCommentId)?.author}</span>
-            <span className="text-[10px] text-gray-400">{new Date(comments.find(c => c.id === activeCommentId)?.timestamp || 0).toLocaleTimeString()}</span>
-          </div>
-          <textarea
-            autoFocus
-            className="w-full text-sm outline-none resize-none border-b border-gray-200 focus:border-blue-500 pb-1"
-            placeholder="Write a comment..."
-            rows={3}
-            value={comments.find(c => c.id === activeCommentId)?.text || ""}
-            onChange={(e) => {
-              const val = e.target.value;
-              setComments(prev => prev.map(c => c.id === activeCommentId ? { ...c, text: val } : c));
+      {activeCommentId && (() => {
+        const activeCommentEl = elements.find(el => el.id === activeCommentId);
+        const activeLegacyComment = comments.find(c => c.id === activeCommentId);
+        const commentX = activeCommentEl ? activeCommentEl.x + activeCommentEl.width / 2 : (activeLegacyComment?.x || 0);
+        const commentY = activeCommentEl ? activeCommentEl.y + activeCommentEl.height / 2 : (activeLegacyComment?.y || 0);
+        const commentAuthor = activeCommentEl?.author || activeLegacyComment?.author || "Guest";
+        const commentTime = activeCommentEl?.timestamp || activeLegacyComment?.timestamp || Date.now();
+        const commentText = activeCommentEl?.text || activeLegacyComment?.text || "";
+
+        return (
+          <div 
+            className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-2xl p-3 w-64 flex flex-col gap-2"
+            style={{
+              left: (pan.x + commentX * zoom) + 20,
+              top: (pan.y + commentY * zoom) - 20,
             }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Escape") setActiveCommentId(null);
-            }}
-          />
-          <div className="flex justify-end gap-2 mt-1">
-            <button 
-              className="text-xs font-medium text-rose-500 hover:bg-rose-50 px-2 py-1 rounded transition-colors"
-              onClick={() => {
-                setComments(prev => prev.filter(c => c.id !== activeCommentId));
-                setActiveCommentId(null);
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-bold text-gray-700">{commentAuthor}</span>
+              <span className="text-[10px] text-gray-400">{new Date(commentTime).toLocaleTimeString()}</span>
+            </div>
+            <textarea
+              autoFocus
+              className="w-full text-sm outline-none resize-none border-b border-gray-200 focus:border-blue-500 pb-1"
+              placeholder="Write a comment..."
+              rows={3}
+              value={commentText}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (activeCommentEl) {
+                  const updated = elements.map(el => el.id === activeCommentId ? { ...el, text: val } : el);
+                  setElements(updated);
+                  throttledUpdateElement(updated.find(el => el.id === activeCommentId)!);
+                } else {
+                  setComments(prev => prev.map(c => c.id === activeCommentId ? { ...c, text: val } : c));
+                }
               }}
-            >
-              Delete
-            </button>
-            <button 
-              className="text-xs font-medium bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
-              onClick={() => setActiveCommentId(null)}
-            >
-              Done
-            </button>
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Escape") setActiveCommentId(null);
+              }}
+            />
+            <div className="flex justify-end gap-2 mt-1">
+              <button 
+                className="text-xs font-medium text-rose-500 hover:bg-rose-50 px-2 py-1 rounded transition-colors"
+                onClick={() => {
+                  if (activeCommentEl) {
+                    const nextElements = elements.filter(el => el.id !== activeCommentId);
+                    setElements(nextElements);
+                    pushToHistoryWithSync(nextElements);
+                  } else {
+                    setComments(prev => prev.filter(c => c.id !== activeCommentId));
+                  }
+                  setActiveCommentId(null);
+                }}
+              >
+                Delete
+              </button>
+              <button 
+                className="text-xs font-medium bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
+                onClick={() => setActiveCommentId(null)}
+              >
+                Done
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Main canvas */}
       <div ref={containerRef} className="absolute inset-0 z-0" style={{ touchAction: "none" }}>

@@ -945,6 +945,51 @@ const drawSelectionUI = (
   }
 };
 
+const drawCommentElement = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  el: Element,
+  index: number
+) => {
+  ctx.save();
+  
+  // Speech bubble path
+  ctx.beginPath();
+  const radius = Math.min(w, h, 8); // rounded corners
+  // Draw rounded rectangle
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  // Tail pointing to bottom-left
+  ctx.lineTo(x + radius + 10, y + h);
+  ctx.lineTo(x + 5, y + h + 8);
+  ctx.lineTo(x + radius, y + h - 4);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+
+  ctx.fillStyle = el.fillColor || "#facc15";
+  ctx.fill();
+  ctx.strokeStyle = el.color || "#ca8a04";
+  ctx.lineWidth = el.strokeWidth || 1.5;
+  ctx.stroke();
+
+  // Draw comment index or comment icon
+  ctx.fillStyle = "#333333";
+  ctx.font = `bold ${Math.min(w, h) * 0.4}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`💬 ${index}`, x + w / 2, y + h / 2);
+  ctx.restore();
+};
+
 // =========================================================
 // 6. MAIN RENDER FUNCTION
 // =========================================================
@@ -957,7 +1002,8 @@ export const renderElement = (
   editingElementId?: string | null,
   editingText?: string,
   caretVisible?: boolean,
-  caretIndex?: number
+  caretIndex?: number,
+  allElements?: Element[]
 ) => {
   ctx.save();
   
@@ -1002,6 +1048,13 @@ export const renderElement = (
     case "icon": 
       drawIcon(ctx, x, y, w, h, el); 
       break;
+    case "comment": {
+      const commentIndex = allElements
+        ? allElements.filter(e => e.tool === "comment").indexOf(el) + 1
+        : 1;
+      drawCommentElement(ctx, x, y, w, h, el, commentIndex);
+      break;
+    }
   }
 
   // Selection UI
@@ -1180,7 +1233,7 @@ export const renderLayers = (
     layers.nodes.style.width = `${w}px`; layers.nodes.style.height = `${h}px`;
     nodeCtx.setTransform(dpr, 0, 0, dpr, 0, 0); nodeCtx.clearRect(0, 0, w, h);
     nodeCtx.save(); nodeCtx.translate(pan.x, pan.y); nodeCtx.scale(zoom, zoom);
-    visibleElements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex));
+    visibleElements.forEach(el => renderElement(nodeCtx, el, zoom, defaultTextStyle, editingElementId, editingText, caretVisible, caretIndex, elements));
     comments.filter(c => !c.resolved).forEach((c, i) => {
       nodeCtx.beginPath(); nodeCtx.arc(c.x, c.y, 10/zoom, 0, Math.PI*2);
       nodeCtx.fillStyle = "#facc15"; nodeCtx.fill();

@@ -145,6 +145,9 @@ export interface Element {
   italic?: boolean;
   padding?: number;
   lastModified?: number;
+  author?: string;
+  timestamp?: number;
+  resolved?: boolean;
 }
 
 export interface BoardSettings {
